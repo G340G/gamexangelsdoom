@@ -3,1503 +3,879 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LO-FI ANGELS — Retro Horror Run & Gun</title>
+  <title>LO-FI ANGELS: REBIRTH</title>
   <link rel="icon" href="data:,">
   <style>
     :root{
-      --bg:#07070a;
-      --panel:#0e0f14cc;
-      --text:#e8e8ef;
-      --muted:#a7a7b4;
-      --accent:#c83cff;
-      --danger:#ff3c5a;
-      --ok:#43ff9b;
-      --line:#2a2a3a;
+      --bg:#020202;
+      --panel:#111116;
+      --text:#a0a0b0;
+      --accent:#7d3cff;
+      --danger:#ff2a2a;
+      --light:#e0e0e0;
     }
-    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow:hidden;}
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family:'Courier New', monospace; overflow:hidden;}
     #wrap{position:fixed; inset:0;}
-    canvas{position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; background:#000;}
+    canvas{position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; background:#050505;}
+    
+    /* CRT Scanline Overlay */
+    #crt{
+      position:absolute; inset:0; pointer-events:none; z-index:10;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      background-size: 100% 2px, 3px 100%;
+      box-shadow: inset 0 0 80px rgba(0,0,0,0.7);
+    }
+
     .overlay{
-      position:absolute; inset:0; display:grid; place-items:center;
-      background: radial-gradient(ellipse at center, #0a0a12cc 0%, #05050acc 60%, #000 100%);
-      backdrop-filter: blur(2px);
+      position:absolute; inset:0; display:grid; place-items:center; z-index:20;
+      background: rgba(0,0,0,0.85);
+      transition: opacity 0.3s;
     }
     .panel{
-      width:min(860px, 92vw);
-      background:var(--panel);
-      border:1px solid var(--line);
-      border-radius:16px;
-      box-shadow: 0 12px 48px #000a;
-      padding:18px 18px 14px;
+      width:min(800px, 90vw);
+      background:var(--panel); border:1px solid #333; box-shadow: 0 0 20px #000;
+      padding:24px; position:relative;
     }
-    .title{
-      display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
-      letter-spacing:0.12em; text-transform:uppercase;
-      font-weight:800; font-size:20px;
+    .panel::before{
+      content:""; position:absolute; top:-1px; left:10px; right:10px; height:1px; background:var(--accent); box-shadow:0 0 10px var(--accent);
     }
-    .title small{font-weight:600; color:var(--muted); letter-spacing:0.06em; text-transform:none;}
-    .grid{display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; margin-top:12px;}
-    @media (max-width:760px){ .grid{grid-template-columns:1fr; } }
-    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
-    label{font-size:12px; color:var(--muted); letter-spacing:0.04em;}
+    
+    h1{ margin:0 0 10px 0; font-size:24px; color:var(--light); text-transform:uppercase; letter-spacing:4px; text-shadow:0 0 8px var(--accent); }
+    h1 span{ font-size:12px; color:#666; vertical-align:middle; letter-spacing:1px; }
+
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-top:20px; }
     input[type="text"]{
-      flex:1; min-width:220px;
-      background:#0b0b12; border:1px solid var(--line); color:var(--text);
-      padding:10px 12px; border-radius:12px; outline:none;
+      width:100%; box-sizing:border-box; background:#000; border:1px solid #444; color:white; padding:12px; font-family:inherit; outline:none;
     }
-    input[type="text"]:focus{border-color:#5a3cff; box-shadow:0 0 0 3px #5a3cff22;}
-    .avatar{display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;}
-    .chip{
-      background:#0b0b12; border:1px solid var(--line); border-radius:14px;
-      padding:10px 10px; cursor:pointer; user-select:none;
-      transition: transform .08s ease, border-color .08s ease, box-shadow .08s ease;
-    }
-    .chip:hover{transform: translateY(-1px); border-color:#4c4c66;}
-    .chip.sel{border-color:var(--accent); box-shadow:0 0 0 3px #c83cff22;}
-    .chip .name{font-weight:800; font-size:13px;}
-    .chip .desc{font-size:12px; color:var(--muted); margin-top:4px; line-height:1.25;}
+    input[type="text"]:focus{ border-color:var(--accent); }
+
     .btn{
-      appearance:none; border:1px solid var(--line); background:#0b0b12; color:var(--text);
-      padding:10px 14px; border-radius:14px; cursor:pointer; font-weight:800;
-      letter-spacing:0.03em;
-      transition: transform .08s ease, border-color .08s ease, box-shadow .08s ease;
+      background:#000; color:var(--light); border:1px solid #444; padding:10px 20px; 
+      font-family:inherit; font-weight:bold; cursor:pointer; text-transform:uppercase;
+      transition:0.2s;
     }
-    .btn:hover{transform: translateY(-1px); border-color:#4c4c66;}
-    .btn.primary{border-color:#5a3cff; box-shadow:0 0 0 3px #5a3cff22;}
-    .help{margin-top:10px; color:var(--muted); font-size:12px; line-height:1.35;}
-    .kbd{display:inline-block; padding:2px 7px; border:1px solid var(--line); border-bottom-color:#1a1a24; border-radius:8px; background:#0b0b12; color:#d8d8e6; font-weight:800;}
-    #loreOverlay, #gameOverOverlay{display:none;}
+    .btn:hover{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 0 15px var(--accent); }
+    .btn.secondary{ border-color:#333; color:#666; }
+    .btn.secondary:hover{ border-color:#666; background:#222; color:#fff; box-shadow:none; }
+
+    .help{ margin-top:15px; font-size:12px; color:#666; line-height:1.5; }
+    .kbd{ border:1px solid #444; padding:2px 6px; border-radius:4px; color:#fff; background:#222; }
+
     .mono{
-      white-space:pre-wrap;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size:13px; line-height:1.45;
-      color:#ececf6;
-      background:#07070bcc;
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:12px 12px;
-      max-height:min(56vh, 420px);
-      overflow:auto;
+      white-space:pre-wrap; font-size:14px; line-height:1.6; color:#ccc; 
+      border-left:2px solid var(--accent); padding-left:15px; margin-top:10px;
     }
-    .subrow{display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;}
-    .badge{
-      font-size:12px; color:#e9e9ff;
-      padding:4px 10px; border-radius:999px;
-      border:1px solid var(--line); background:#0b0b12;
+
+    /* Avatars */
+    .avatars{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:5px; }
+    .avi{ 
+      border:1px solid #333; padding:10px; cursor:pointer; opacity:0.6; transition:0.2s;
+      display:flex; flex-direction:column; gap:4px;
     }
-    .badge.bad{border-color:#ff3c5a55;}
-    .badge.good{border-color:#43ff9b55;}
+    .avi:hover{ opacity:1; border-color:#666; }
+    .avi.sel{ opacity:1; border-color:var(--accent); background:#1a1025; }
+    .avi b{ color:#fff; font-size:14px; }
+    .avi small{ font-size:11px; color:#888; }
+
+    #ui_layer{ pointer-events:none; position:absolute; top:20px; left:20px; right:20px; display:flex; justify-content:space-between; z-index:15; mix-blend-mode:difference; }
+    .bar{ height:4px; width:100px; background:#333; margin-bottom:5px; position:relative; }
+    .fill{ height:100%; background:#fff; width:100%; transition:width 0.2s; }
+    .stat{ font-size:10px; color:#fff; font-weight:bold; text-transform:uppercase; letter-spacing:1px; }
+
   </style>
 </head>
 <body>
   <div id="wrap">
     <canvas id="game"></canvas>
+    <div id="crt"></div> <div id="ui_layer" style="display:none">
+      <div>
+        <div class="stat">Integrity</div>
+        <div class="bar"><div id="ui_hp" class="fill" style="background:var(--danger)"></div></div>
+        <div class="stat">Light / Sanity</div>
+        <div class="bar"><div id="ui_san" class="fill" style="background:var(--accent)"></div></div>
+      </div>
+      <div style="text-align:right">
+        <div class="stat" id="ui_score">DEPTH: 0m</div>
+        <div class="stat" style="color:#666" id="ui_tension">ATMOSPHERE</div>
+      </div>
+    </div>
 
-    <!-- MENU -->
     <div id="menuOverlay" class="overlay">
       <div class="panel">
-        <div class="title">LO-FI ANGELS <small>run & gun / psychological dread</small></div>
+        <h1>Lo-Fi Angels <span>// REBIRTH_PROTOCOL</span></h1>
+        <div class="help">
+          An atmospheric horror run & gun. <br/>
+          The fog is thick. Your <b>Sanity</b> fuels your light. <br/>
+          <br/>
+          <span style="color:var(--danger)">WARNING:</span> Avoid the spectral shapes. Do not kill the <b>Daughter</b> (Green Ghost).
+        </div>
+
         <div class="grid">
           <div>
-            <div class="row"><label for="playerName">Player Name</label></div>
-            <div class="row" style="margin-top:6px;">
-              <input id="playerName" type="text" maxlength="20" placeholder="Type your name…" value="defer" />
-              <button id="startBtn" class="btn primary">Start</button>
-            </div>
+            <label style="font-size:12px; color:#666;">IDENTITY</label>
+            <input id="playerName" type="text" placeholder="ENTER NAME" value="SEEKER" maxlength="12" style="margin-top:5px;">
             <div class="help">
-              Controls: <span class="kbd">W</span> jump · <span class="kbd">A</span><span class="kbd">D</span> move · <span class="kbd">S</span> crouch · Mouse aim · Click/hold shoot · <span class="kbd">E</span> pick up · <span class="kbd">Space</span> close notes<br/>
-              Protect <b>The Daughter</b>. If you shoot her: <b style="color:var(--danger)">Bad Ending</b>.
+              <span class="kbd">WASD</span> Move/Jump<br/>
+              <span class="kbd">MOUSE</span> Aim<br/>
+              <span class="kbd">CLICK</span> Fire<br/>
+              <span class="kbd">E</span> Interact
             </div>
           </div>
           <div>
-            <label>Choose Avatar</label>
-            <div class="avatar" style="margin-top:6px;">
-              <div class="chip sel" data-avatar="0">
-                <div class="name">The Drifter</div>
-                <div class="desc">Fast firing. Lore is cold and clinical.</div>
-              </div>
-              <div class="chip" data-avatar="1">
-                <div class="name">The Medium</div>
-                <div class="desc">Higher sanity. Lore is intimate and pleading.</div>
-              </div>
-              <div class="chip" data-avatar="2">
-                <div class="name">The Bruiser</div>
-                <div class="desc">Higher damage. Lore is accusatory.</div>
-              </div>
+            <label style="font-size:12px; color:#666;">CLASS</label>
+            <div class="avatars">
+              <div class="avi sel" onclick="selectAvi(0, this)"><b>Vanguard</b><small>Balanced</small></div>
+              <div class="avi" onclick="selectAvi(1, this)"><b>Occultist</b><small>High Sanity</small></div>
+              <div class="avi" onclick="selectAvi(2, this)"><b>Heavy</b><small>High HP</small></div>
             </div>
-          </div>
-        </div>
-        <div class="help">
-          The world begins in <b>Atmospheric Mode</b> (no spawns). Cross the <i>threshold</i> or read a note to wake the Angels.
-        </div>
-      </div>
-    </div>
-
-    <!-- NOTE MODAL -->
-    <div id="loreOverlay" class="overlay">
-      <div class="panel">
-        <div class="title">FOUND NOTE <small>the paper feels warm</small></div>
-        <div id="loreText" class="mono" style="margin-top:12px;"></div>
-        <div class="subrow">
-          <span class="badge">Game paused</span>
-          <button id="closeLoreBtn" class="btn">Continue <span class="kbd">Space</span></button>
-        </div>
-      </div>
-    </div>
-
-    <!-- GAME OVER -->
-    <div id="gameOverOverlay" class="overlay">
-      <div class="panel">
-        <div class="title" id="gameOverTitle">GAME OVER</div>
-        <div id="gameOverBody" class="help" style="font-size:13px; margin-top:10px;"></div>
-        <div class="subrow">
-          <span id="endingBadge" class="badge bad">Bad Ending</span>
-          <div class="row">
-            <button id="retryBtn" class="btn primary">Retry</button>
-            <button id="backBtn" class="btn">Back to Menu</button>
+            <button id="startBtn" class="btn" style="width:100%; margin-top:20px;">INITIATE</button>
           </div>
         </div>
       </div>
     </div>
+
+    <div id="loreOverlay" class="overlay" style="display:none">
+      <div class="panel">
+        <h1 style="font-size:18px; color:var(--accent)">ARCHIVE DATA</h1>
+        <div id="loreText" class="mono"></div>
+        <div style="margin-top:20px; text-align:right">
+          <button id="closeLoreBtn" class="btn secondary">CLOSE [SPACE]</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="overOverlay" class="overlay" style="display:none">
+      <div class="panel" style="text-align:center">
+        <h1 id="overTitle" style="color:var(--danger)">SIGNAL LOST</h1>
+        <div id="overReason" class="mono" style="text-align:center; border:none;"></div>
+        <div style="margin-top:30px;">
+          <button onclick="location.reload()" class="btn">REBOOT SYSTEM</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 <script>
-(() => {
-  "use strict";
+// --- ENGINE SETUP ---
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha: false }); // Optimize
+let width, height;
+const resize = () => {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+};
+window.addEventListener('resize', resize);
+resize();
 
-  /*********************
-   * Utilities
-   *********************/
-  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-  const lerp  = (a,b,t)=>a+(b-a)*t;
-  const rand  = (a=0,b=1)=>a+Math.random()*(b-a);
-  const randi = (a,b)=>(a+(Math.random()*(b-a+1)|0));
-  const chance=(p)=>Math.random()<p;
+// --- CONFIG ---
+const GRAVITY = 700; 
+const GROUND_Y = () => height - 100;
+const PAL = {
+  bg: '#050505',
+  ground: '#0a0a0d',
+  obs: '#15151a',
+  player: '#e0e0e0',
+  playerDim: '#666',
+  enemy: '#ff2a2a',
+  daughter: '#00ffaa', // Distinct Green
+  daughterGlow: 'rgba(0,255,170,0.2)',
+  light: 'rgba(255, 240, 200, 0.08)',
+  tree: '#0d0d10'
+};
 
-  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
-    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
-  }
-  function norm(x,y){
-    const l = Math.hypot(x,y)||1;
-    return [x/l,y/l];
-  }
+// --- UTILS ---
+const rand = (min, max) => Math.random() * (max - min) + min;
+const randi = (min, max) => Math.floor(rand(min, max));
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const aabb = (r1, r2) => r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
 
-  /*********************
-   * Palettes
-   *********************/
-  const PALETTES = [
-    { name:"Asphalt",
-      sky:"#05050a", fog:"#0b0b14", ground:"#111122", wall:"#1a1a2d", outline:"#2a2a44",
-      player:"#d8d8ef", playerAccent:"#c83cff",
-      enemy:"#ff3c5a", enemyAlt:"#ffb3c0",
-      daughter:"#43ff9b", daughterAlt:"#c9ffe5",
-      note:"#f3f3ff", hp:"#ff3c5a", sanity:"#c83cff",
-      ui:"#e8e8ef", uiDim:"#a7a7b4",
-      blood:"#7b0016"
-    },
-    { name:"Inverse",
-      sky:"#e9e9ff", fog:"#d3d3ff", ground:"#cfcfee", wall:"#b8b8da", outline:"#0c0c1c",
-      player:"#101018", playerAccent:"#2e6cff",
-      enemy:"#0a0a0f", enemyAlt:"#5b5b74",
-      daughter:"#0a0a0f", daughterAlt:"#2f2f44",
-      note:"#101018", hp:"#0a0a0f", sanity:"#2e6cff",
-      ui:"#101018", uiDim:"#2a2a44",
-      blood:"#2a2a44"
-    },
-    { name:"Rust",
-      sky:"#070608", fog:"#120d10", ground:"#1a1114", wall:"#26181e", outline:"#3a222a",
-      player:"#e9e3dc", playerAccent:"#ffb24a",
-      enemy:"#ff3c5a", enemyAlt:"#ffd3a0",
-      daughter:"#43ff9b", daughterAlt:"#e6fff3",
-      note:"#fff3e6", hp:"#ff3c5a", sanity:"#ffb24a",
-      ui:"#e9e3dc", uiDim:"#b6a9a0",
-      blood:"#6c0012"
-    }
-  ];
+// --- AUDIO SYSTEM (Procedural) ---
+const Audio = {
+  ctx: null,
+  master: null,
+  start: function() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.3;
+    this.master.connect(this.ctx.destination);
+    this.drone();
+  },
+  drone: function() {
+    // Spooky background drone
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.frequency.value = 55; // Low A
+    osc.type = 'sawtooth';
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 120;
+    
+    // LFO for drone wobble
+    const lfo = this.ctx.createOscillator();
+    lfo.frequency.value = 0.1;
+    const lfoG = this.ctx.createGain();
+    lfoG.gain.value = 50;
+    lfo.connect(lfoG);
+    lfoG.connect(filter.frequency);
+    lfo.start();
 
-  /*********************
-   * Input
-   *********************/
-  class Input{
-    constructor(canvas){
-      this.canvas = canvas;
-      this.keys = new Set();
-      this.mouse = {x:0,y:0,down:false,justPressed:false};
-      this.map = {invertMove:false};
-
-      window.addEventListener("keydown",(e)=>{
-        if(["KeyW","KeyA","KeyS","KeyD","KeyE","Space"].includes(e.code)) e.preventDefault();
-        this.keys.add(e.code);
-      },{passive:false});
-      window.addEventListener("keyup",(e)=>this.keys.delete(e.code));
-
-      canvas.addEventListener("mousemove",(e)=>{
-        const r = canvas.getBoundingClientRect();
-        this.mouse.x = (e.clientX - r.left) / r.width;
-        this.mouse.y = (e.clientY - r.top)  / r.height;
-      });
-      canvas.addEventListener("mousedown",()=>{
-        this.mouse.down = true;
-        this.mouse.justPressed = true;
-      });
-      window.addEventListener("mouseup",()=>this.mouse.down=false);
-    }
-    down(code){ return this.keys.has(code); }
-    axisX(){
-      let x = (this.down("KeyD")?1:0) - (this.down("KeyA")?1:0);
-      return this.map.invertMove ? -x : x;
-    }
-    jump(){ return this.down("KeyW"); }
-    crouch(){ return this.down("KeyS"); }
-    interact(){ return this.down("KeyE"); }
-    consumeSpace(){
-      if(this.down("Space")){ this.keys.delete("Space"); return true; }
-      return false;
-    }
-  }
-
-  /*********************
-   * Audio (procedural drone + noise)
-   *********************/
-  class AudioManager{
-    constructor(){
-      this.ctx=null; this.master=null;
-      this.filter=null; this.noiseGain=null;
-      this.osc1=null; this.osc2=null; this.lfo=null; this.lfoGain=null;
-      this.started=false;
-      this.intensity=0;
-    }
-    start(){
-      if(this.started) return;
-      const AC = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AC();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.25;
-      this.master.connect(this.ctx.destination);
-
-      this.filter = this.ctx.createBiquadFilter();
-      this.filter.type = "lowpass";
-      this.filter.frequency.value = 340;
-      this.filter.Q.value = 0.9;
-      this.filter.connect(this.master);
-
-      // drone
-      this.osc1 = this.ctx.createOscillator();
-      this.osc2 = this.ctx.createOscillator();
-      this.osc1.type="sawtooth";
-      this.osc2.type="triangle";
-      this.osc1.frequency.value=48;
-      this.osc2.frequency.value=52;
-
-      const dg = this.ctx.createGain();
-      dg.gain.value = 0.10;
-      this.osc1.connect(dg); this.osc2.connect(dg);
-      dg.connect(this.filter);
-
-      // noise buffer
-      const nlen = 2*this.ctx.sampleRate;
-      const buf = this.ctx.createBuffer(1,nlen,this.ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for(let i=0;i<nlen;i++) data[i] = (Math.random()*2-1) * (0.6+0.4*Math.random());
-      const noise = this.ctx.createBufferSource();
-      noise.buffer = buf; noise.loop = true;
-
-      const hp = this.ctx.createBiquadFilter();
-      hp.type = "highpass";
-      hp.frequency.value = 130;
-
-      this.noiseGain = this.ctx.createGain();
-      this.noiseGain.gain.value = 0.03;
-
-      noise.connect(hp);
-      hp.connect(this.noiseGain);
-      this.noiseGain.connect(this.filter);
-
-      // lfo on filter
-      this.lfo = this.ctx.createOscillator();
-      this.lfo.type="sine";
-      this.lfo.frequency.value = 0.08;
-      this.lfoGain = this.ctx.createGain();
-      this.lfoGain.gain.value = 140;
-      this.lfo.connect(this.lfoGain);
-      this.lfoGain.connect(this.filter.frequency);
-
-      const t = this.ctx.currentTime;
-      this.osc1.start(t); this.osc2.start(t);
-      noise.start(t);
-      this.lfo.start(t);
-      this.started=true;
-    }
-    setIntensity(v){
-      this.intensity = clamp(v,0,1);
-      if(!this.started) return;
-      const t = this.ctx.currentTime;
-      const i = this.intensity;
-
-      this.master.gain.setTargetAtTime(0.22 + i*0.28, t, 0.12);
-      this.filter.frequency.setTargetAtTime(260 + i*1200, t, 0.12);
-      this.noiseGain.gain.setTargetAtTime(0.02 + i*0.14, t, 0.10);
-
-      this.osc1.detune.setTargetAtTime(-20 - i*40, t, 0.12);
-      this.osc2.detune.setTargetAtTime( 10 + i*60, t, 0.12);
-      this.lfo.frequency.setTargetAtTime(0.06 + i*0.9, t, 0.12);
-      this.lfoGain.gain.setTargetAtTime(120 + i*450, t, 0.12);
-    }
-    thump(amount=1){
-      if(!this.started) return;
-      const t = this.ctx.currentTime;
-      const o = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      o.type="sine"; o.frequency.value=110;
-      g.gain.value=0.0001;
-      o.connect(g); g.connect(this.master);
-
-      o.frequency.setValueAtTime(120, t);
-      o.frequency.exponentialRampToValueAtTime(45, t+0.14);
-
-      const peak = 0.08*amount;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(peak, t+0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t+0.20);
-
-      o.start(t); o.stop(t+0.24);
+    osc.connect(filter).connect(g).connect(this.master);
+    g.gain.value = 0.5;
+    osc.start();
+  },
+  play: function(type) {
+    if(!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.connect(g).connect(this.master);
+    
+    if (type === 'shoot') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(150, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+      g.gain.setValueAtTime(0.2, t);
+      g.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+      osc.start(t); osc.stop(t + 0.1);
+    } else if (type === 'jump') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(200, t);
+      osc.frequency.linearRampToValueAtTime(100, t + 0.2);
+      g.gain.setValueAtTime(0.2, t);
+      g.gain.linearRampToValueAtTime(0.01, t + 0.2);
+      osc.start(t); osc.stop(t + 0.2);
+    } else if (type === 'hit') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(100, t);
+      osc.frequency.exponentialRampToValueAtTime(10, t + 0.3);
+      g.gain.setValueAtTime(0.3, t);
+      g.gain.linearRampToValueAtTime(0.01, t + 0.3);
+      osc.start(t); osc.stop(t + 0.3);
     }
   }
+};
 
-  /*********************
-   * World
-   *********************/
-  class World{
-    constructor(){
-      this.groundY = 140;
-      this.blocks = [];
-      this.thresholdX = 920;
-      this._make();
-    }
-    _make(){
-      this.blocks.length=0;
-      let x = 110;
-      for(let i=0;i<70;i++){
-        x += randi(70,140);
-        if(chance(0.55)){
-          const w=randi(26,70), h=randi(12,48);
-          const y=this.groundY - h - (chance(0.38)? randi(16,44):0);
-          this.blocks.push({x,y,w,h});
-        }
-      }
-      // a few chokepoints
-      this.blocks.push({x:520, y:this.groundY-38, w:18, h:38});
-      this.blocks.push({x:1260, y:this.groundY-54, w:22, h:54});
-      this.blocks.push({x:1600, y:this.groundY-30, w:16, h:30});
-    }
-    collide(body){
-      body.onGround = false;
+// --- GAME CLASSES ---
 
-      // ground
-      if(body.y + body.h > this.groundY){
-        body.y = this.groundY - body.h;
-        body.vy = 0;
-        body.onGround = true;
-      }
-
-      // blocks
-      for(const b of this.blocks){
-        if(!aabb(body.x,body.y,body.w,body.h, b.x,b.y,b.w,b.h)) continue;
-
-        const dx1=(b.x+b.w)-body.x;
-        const dx2=(body.x+body.w)-b.x;
-        const dy1=(b.y+b.h)-body.y;
-        const dy2=(body.y+body.h)-b.y;
-        const minX=Math.min(dx1,dx2);
-        const minY=Math.min(dy1,dy2);
-
-        if(minX < minY){
-          if(dx1 < dx2) body.x = b.x + b.w;
-          else          body.x = b.x - body.w;
-          body.vx = 0;
-        }else{
-          if(dy1 < dy2){
-            body.y = b.y + b.h;
-            body.vy = Math.max(body.vy, 0);
-          }else{
-            body.y = b.y - body.h;
-            body.vy = 0;
-            body.onGround = true;
-          }
-        }
-      }
-    }
-    draw(ctx, cam, pal, t){
-      ctx.fillStyle = pal.sky;
-      ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
-
-      // fog bands
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = pal.fog;
-      for(let i=0;i<6;i++){
-        const yy = 18 + i*18 + Math.sin((cam.x*0.002) + i + t*0.4)*2;
-        ctx.fillRect(0, yy, ctx.canvas.width, 10);
-      }
-      ctx.globalAlpha = 1;
-
-      // ground
-      ctx.fillStyle = pal.ground;
-      ctx.fillRect(0, this.groundY - cam.y, ctx.canvas.width, ctx.canvas.height);
-
-      // blocks
-      for(const b of this.blocks){
-        const sx = (b.x - cam.x)|0;
-        const sy = (b.y - cam.y)|0;
-        if(sx + b.w < -40 || sx > ctx.canvas.width + 40) continue;
-        ctx.fillStyle = pal.wall;
-        ctx.fillRect(sx,sy,b.w,b.h);
-        ctx.strokeStyle = pal.outline;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(sx+0.5,sy+0.5,b.w-1,b.h-1);
-      }
-
-      // threshold marker
-      const tx = (this.thresholdX - cam.x)|0;
-      if(tx > -80 && tx < ctx.canvas.width + 80){
-        ctx.globalAlpha = 0.7;
-        ctx.strokeStyle = pal.playerAccent;
-        for(let i=0;i<6;i++){
-          const y0 = this.groundY - cam.y - 80 + i*14;
-          ctx.beginPath();
-          ctx.moveTo(tx, y0);
-          ctx.lineTo(tx + (i%2?10:-10), y0+10);
-          ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-      }
-    }
+class Particle {
+  constructor(x, y, color, speed) {
+    this.x = x; this.y = y; this.color = color;
+    this.vx = rand(-speed, speed);
+    this.vy = rand(-speed, speed);
+    this.life = 1.0;
+    this.decay = rand(0.02, 0.05);
   }
-
-  /*********************
-   * FX
-   *********************/
-  class FX{
-    constructor(){ this.p=[]; }
-    blood(x,y,n=10){
-      for(let i=0;i<n;i++){
-        this.p.push({x,y,vx:rand(-40,40),vy:rand(-90,20),life:rand(0.25,0.7),k:"b",s:rand(1,2.3)});
-      }
-    }
-    spark(x,y,n=6){
-      for(let i=0;i<n;i++){
-        this.p.push({x,y,vx:rand(-70,70),vy:rand(-70,70),life:rand(0.12,0.35),k:"s",s:1});
-      }
-    }
-    gib(x,y,n=14){
-      for(let i=0;i<n;i++){
-        this.p.push({x,y,vx:rand(-90,90),vy:rand(-150,40),life:rand(0.35,1.0),k:"g",s:rand(1,3)});
-      }
-    }
-    update(dt, world){
-      for(const q of this.p){
-        q.life -= dt;
-        q.vy += 320*dt*0.55;
-        q.x += q.vx*dt;
-        q.y += q.vy*dt;
-        if(q.y > world.groundY){
-          q.y = world.groundY;
-          q.vx *= 0.35;
-          q.vy *= -0.2;
-        }
-      }
-      this.p = this.p.filter(q=>q.life>0);
-    }
-    draw(ctx, cam, pal){
-      for(const q of this.p){
-        const sx=(q.x-cam.x)|0, sy=(q.y-cam.y)|0;
-        if(sx < -10 || sx > ctx.canvas.width+10) continue;
-        if(q.k==="b"){ ctx.fillStyle = pal.blood; ctx.fillRect(sx,sy,q.s,q.s); }
-        else if(q.k==="s"){ ctx.fillStyle = pal.note; ctx.fillRect(sx,sy,1,1); }
-        else { ctx.fillStyle = pal.enemy; ctx.fillRect(sx,sy,q.s,q.s); }
-      }
-    }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.life -= this.decay;
   }
-
-  /*********************
-   * Entities
-   *********************/
-  class Entity{
-    constructor(x,y,w,h){ this.x=x; this.y=y; this.w=w; this.h=h; this.vx=0; this.vy=0; this.dead=false; this.onGround=false; }
-    get cx(){ return this.x + this.w/2; }
-    get cy(){ return this.y + this.h/2; }
+  draw(ctx, camX) {
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x - camX, this.y, 2, 2);
+    ctx.globalAlpha = 1;
   }
+}
 
-  class Player extends Entity{
-    constructor(x,y, avatarId, name){
-      super(x,y,10,16);
-      this.name = name;
-      this.avatarId = avatarId|0;
-      this.hpMax=100; this.hp=100;
-      this.sanityMax=100; this.sanity=100;
-      this.facing=1;
-      this.crouching=false;
-      this.fireCD=0;
-      this.hurt=0;
-
-      // avatar stats
-      if(this.avatarId===0){ this.move=74; this.jump=-150; this.dmg=13; this.rate=0.105; }
-      if(this.avatarId===1){ this.move=72; this.jump=-155; this.dmg=12; this.rate=0.12;  this.sanity=120; this.sanityMax=120; }
-      if(this.avatarId===2){ this.move=78; this.jump=-145; this.dmg=15; this.rate=0.13;  this.hp=120; this.hpMax=120; }
-    }
-    hurtBy(d){ this.hp = clamp(this.hp-d,0,this.hpMax); this.hurt=0.35; }
-    heal(a){ this.hp = clamp(this.hp+a,0,this.hpMax); }
-    calm(a){ this.sanity = clamp(this.sanity+a,0,this.sanityMax); }
-
-    update(dt, game){
-      const input = game.input;
-
-      // stance
-      this.crouching = input.crouch();
-      this.h = this.crouching ? 12 : 16;
-
-      // horiz
-      const ax = input.axisX();
-      this.vx = ax * this.move;
-      if(ax!==0) this.facing = ax>0?1:-1;
-
-      // jump
-      if(input.jump() && this.onGround && !this.crouching){
-        this.vy = this.jump;
-        this.onGround = false;
-        game.audio.thump(0.45);
-      }
-
-      // gravity
-      this.vy += 320*dt;
-
-      // integrate
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-      game.world.collide(this);
-
-      // shooting
-      this.fireCD = Math.max(0, this.fireCD - dt);
-      if(input.mouse.down && this.fireCD<=0){
-        this.fireCD = this.rate;
-        game.shoot();
-        this.sanity = clamp(this.sanity - 0.35, 0, this.sanityMax);
-      }
-
-      // passive sanity decay by stress
-      const heat = game.tension.heat;
-      const stress = (game.tension.mode==="frenetic"?0.9:0.15) + (this.hp < this.hpMax*0.35 ? 0.55 : 0);
-      this.sanity = clamp(this.sanity - (stress*dt*2.2 + heat*dt*1.6), 0, this.sanityMax);
-
-      this.hurt = Math.max(0,this.hurt-dt);
-      this.x = Math.max(-20, this.x);
-    }
-
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-
-      ctx.fillStyle = pal.outline;
-      ctx.fillRect(sx-1,sy-1,this.w+2,this.h+2);
-
-      const blink = (this.hurt>0 && ((this.hurt*30)|0)%2===0);
-      ctx.fillStyle = blink ? pal.enemyAlt : pal.player;
-      ctx.fillRect(sx,sy,this.w,this.h);
-
-      // eye
-      ctx.fillStyle = pal.playerAccent;
-      const ex = sx + (this.facing>0 ? this.w-3 : 1);
-      ctx.fillRect(ex, sy+4, 2, 2);
-
-      // gun stub
-      ctx.fillStyle = pal.outline;
-      const gx = sx + (this.facing>0 ? this.w : -3);
-      const gy = sy + (this.crouching ? 6 : 7);
-      ctx.fillRect(gx, gy, 3, 2);
-    }
+class Entity {
+  constructor(x, y, w, h) {
+    this.x = x; this.y = y; this.w = w; this.h = h;
+    this.vx = 0; this.vy = 0;
+    this.grounded = false;
+    this.dead = false;
   }
+  update(dt, world) {
+    this.vy += GRAVITY * dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
 
-  class Bullet extends Entity{
-    constructor(x,y,vx,vy,damage){
-      super(x,y,2,2);
-      this.vx=vx; this.vy=vy;
-      this.life=1.2;
-      this.damage=damage;
+    // Ground Collision
+    this.grounded = false;
+    if (this.y + this.h >= GROUND_Y()) {
+      this.y = GROUND_Y() - this.h;
+      this.vy = 0;
+      this.grounded = true;
     }
-    update(dt, game){
-      this.life -= dt;
-      if(this.life<=0){ this.dead=true; return; }
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
 
-      // world hit
-      if(this.y + this.h > game.world.groundY){ this.dead=true; game.fx.spark(this.x,this.y,5); return; }
-      for(const b of game.world.blocks){
-        if(aabb(this.x,this.y,this.w,this.h, b.x,b.y,b.w,b.h)){
-          this.dead=true; game.fx.spark(this.x,this.y,6); return;
+    // Object Collision
+    world.obstacles.forEach(o => {
+      if (aabb(this, o)) {
+        // Simple resolution: if we were above it, land on it. 
+        // If we hit side, stop.
+        const prevY = this.y - this.vy * dt;
+        if (prevY + this.h <= o.y) {
+          this.y = o.y - this.h;
+          this.vy = 0;
+          this.grounded = true;
+        } else {
+          // Hit side
+          this.x -= this.vx * dt;
+          this.vx = 0;
         }
       }
-    }
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.fillStyle = pal.note;
-      ctx.fillRect(sx,sy,this.w,this.h);
-    }
-  }
-
-  class Enemy extends Entity{
-    constructor(x,y,kind){
-      const fly = (kind==="fly");
-      super(x,y, fly?10:12, fly?10:14);
-      this.kind = kind;
-      this.hp = fly?22:32;
-      this.touch = fly?12:16;
-      this.cool = rand(0,0.8);
-      this.wob = rand(0,6.28);
-    }
-    update(dt, game){
-      const p = game.player;
-      if(!p) return;
-
-      this.cool = Math.max(0, this.cool-dt);
-
-      const dx = p.cx - this.cx;
-      const dy = p.cy - this.cy;
-
-      if(this.kind==="fly"){
-        const [nx,ny]=norm(dx, dy + Math.sin(game.time*2+this.wob)*6);
-        const sp = 56 + (game.tension.mode==="frenetic"?22:0);
-        this.vx = nx*sp; this.vy = ny*sp;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        this.y = Math.min(this.y, game.world.groundY - 22);
-      }else{
-        const dir = dx>0?1:-1;
-        const sp = 42 + (game.tension.mode==="frenetic"?26:0);
-        this.vx = dir*sp;
-        this.vy += 320*dt;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        game.world.collide(this);
-
-        // occasional hop near player
-        if(this.onGround && Math.abs(dx)<70 && this.cool<=0 && chance(0.18)){
-          this.vy = -rand(110,155);
-          this.cool = rand(0.55,1.0);
-        }
-      }
-
-      // contact
-      if(aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h)){
-        if(this.cool<=0){
-          p.hurtBy(this.touch);
-          this.cool = 0.8;
-          game.fx.blood(p.cx,p.cy,10);
-          game.audio.thump(0.85);
-        }
-      }
-
-      // cull far behind
-      if(this.x < game.cam.x - 160) this.dead=true;
-    }
-    hit(dmg, game){
-      this.hp -= dmg;
-      game.fx.blood(this.cx,this.cy,8);
-      if(this.hp<=0){
-        this.dead=true;
-        game.fx.gib(this.cx,this.cy,16);
-        if(chance(0.18)) game.spawnPowerUp(this.cx,this.cy);
-      }
-    }
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.fillStyle = pal.outline; ctx.fillRect(sx-1,sy-1,this.w+2,this.h+2);
-      ctx.fillStyle = pal.enemy;   ctx.fillRect(sx,sy,this.w,this.h);
-
-      ctx.strokeStyle = pal.enemyAlt;
-      ctx.beginPath();
-      if(this.kind==="fly"){
-        ctx.moveTo(sx-3,sy+3); ctx.lineTo(sx+2,sy+6);
-        ctx.moveTo(sx+this.w+3,sy+3); ctx.lineTo(sx+this.w-2,sy+6);
-        ctx.moveTo(sx+this.w/2,sy-3); ctx.lineTo(sx+this.w/2,sy+2);
-      }else{
-        ctx.moveTo(sx-2,sy+this.h-5); ctx.lineTo(sx+3,sy+this.h-8);
-        ctx.moveTo(sx+this.w+2,sy+this.h-5); ctx.lineTo(sx+this.w-3,sy+this.h-8);
-      }
-      ctx.stroke();
-
-      ctx.fillStyle = pal.note;
-      ctx.fillRect(sx+(this.kind==="fly"?4:5), sy+5, 2, 1);
-    }
-  }
-
-  class Daughter extends Entity{
-    constructor(x,y){
-      super(x,y,9,14);
-      this.vx = rand(-18,18);
-      this.t = rand(0,10);
-      this.swap = rand(0.8,1.8);
-      this.notice = 0;
-    }
-    update(dt, game){
-      this.t += dt;
-      this.swap -= dt;
-      if(this.swap<=0){
-        this.vx = rand(-22,22);
-        this.swap = rand(0.7,1.8);
-        if(chance(0.25)) this.vx *= 0.2;
-      }
-
-      this.vy += 320*dt;
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-      game.world.collide(this);
-
-      const left = game.cam.x + 18;
-      const right= game.cam.x + game.rw - 18;
-      if(this.x < left)  this.vx = Math.abs(this.vx)+6;
-      if(this.x > right) this.vx = -Math.abs(this.vx)-6;
-
-      const target = (game.tension.mode==="frenetic") ? 1 : 0.3;
-      this.notice = lerp(this.notice, target, 1 - Math.pow(0.001, dt));
-    }
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.fillStyle = pal.outline; ctx.fillRect(sx-1,sy-1,this.w+2,this.h+2);
-      ctx.fillStyle = pal.daughter; ctx.fillRect(sx,sy,this.w,this.h);
-      ctx.fillStyle = pal.daughterAlt; ctx.fillRect(sx+1,sy+1,this.w-2,3);
-
-      ctx.globalAlpha = 0.25*this.notice;
-      ctx.strokeStyle = pal.daughterAlt;
-      ctx.strokeRect(sx-3,sy-3,this.w+6,this.h+6);
-      ctx.globalAlpha = 1;
-    }
-  }
-
-  class NoteItem extends Entity{
-    constructor(x,y,id){
-      super(x,y,7,6);
-      this.id=id;
-      this.bob = rand(0,6.28);
-    }
-    update(dt){ this.bob += dt*2; }
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0;
-      const sy=((this.y-cam.y)+Math.sin(this.bob)*1.2)|0;
-      ctx.fillStyle = pal.outline; ctx.fillRect(sx-1,sy-1,this.w+2,this.h+2);
-      ctx.fillStyle = pal.note; ctx.fillRect(sx,sy,this.w,this.h);
-      ctx.fillStyle = pal.outline; ctx.fillRect(sx+this.w-2, sy+1, 1, 2);
-    }
-  }
-
-  class PowerUp extends Entity{
-    constructor(x,y,type){
-      super(x,y,8,8);
-      this.type=type; // "hp"|"sanity"
-      this.bob=rand(0,6.28);
-    }
-    update(dt){ this.bob += dt*3; }
-    draw(ctx, cam, pal){
-      const sx=(this.x-cam.x)|0;
-      const sy=((this.y-cam.y)+Math.sin(this.bob)*1.4)|0;
-      ctx.fillStyle = pal.outline; ctx.fillRect(sx-1,sy-1,this.w+2,this.h+2);
-      ctx.fillStyle = (this.type==="hp")?pal.hp:pal.sanity;
-      ctx.fillRect(sx,sy,this.w,this.h);
-
-      ctx.fillStyle = pal.note;
-      if(this.type==="hp"){
-        ctx.fillRect(sx+3,sy+1,2,6);
-        ctx.fillRect(sx+1,sy+3,6,2);
-      }else{
-        ctx.fillRect(sx+2,sy+2,1,4);
-        ctx.fillRect(sx+5,sy+2,1,4);
-        ctx.fillRect(sx+2,sy+6,4,1);
-      }
-    }
-  }
-
-  /*********************
-   * Tension Manager
-   *********************/
-  class Tension{
-    constructor(){ this.mode="atmospheric"; this.spawnT=0; this.heat=0; }
-    update(dt, game){
-      if(this.mode==="atmospheric"){
-        if(game.player && (game.player.x > game.world.thresholdX || game.collectedNotes>0)){
-          this.mode="frenetic";
-          this.spawnT = 0.18;
-          game.whisper("THE AIR HARDENS. WINGS IN THE FOG.", 2.2);
-          game.audio.thump(1.1);
-        }
-      }
-
-      const target = this.mode==="frenetic" ? 1 : 0;
-      this.heat = lerp(this.heat, target, 1 - Math.pow(0.0009, dt));
-
-      if(this.mode==="frenetic"){
-        this.spawnT -= dt;
-        const base = 0.65 - 0.25*this.heat;
-        if(this.spawnT<=0){
-          this.spawnT = rand(base*0.65, base*1.25);
-          game.spawnEnemyWave();
-        }
-      }
-    }
-  }
-
-  /*********************
-   * Madness / Post FX
-   *********************/
-  class Madness{
-    constructor(){
-      this.noise=0.18; this.scan=0.12; this.vignette=0.55;
-      this.invertMoveT=0;
-      this.paletteT=0;
-      this.paletteIndex=0;
-      this.glitch=0;
-    }
-    update(dt, game){
-      const p = game.player;
-      const sanity = p ? (p.sanity / p.sanityMax) : 1;
-      const heat = game.tension ? game.tension.heat : 0;
-
-      const stress = clamp((1-sanity)*0.9 + heat*0.6, 0, 1);
-      this.noise = lerp(this.noise, 0.10 + stress*0.62, 1 - Math.pow(0.001, dt));
-      this.scan  = lerp(this.scan,  0.06 + stress*0.32, 1 - Math.pow(0.001, dt));
-      this.vignette = lerp(this.vignette, 0.30 + stress*0.70, 1 - Math.pow(0.001, dt));
-
-      const pEvent = 0.002 + (1-sanity)*0.010 + heat*0.004;
-      if(game.state==="playing" && chance(pEvent * dt * 60)){
-        if(chance(0.55)){
-          this.invertMoveT = rand(2.0, 5.0);
-          game.whisper("YOUR HANDS ARE NOT YOURS.", 2.2);
-          this.glitch = 0.35;
-        }else{
-          this.paletteT = rand(2.0, 6.0);
-          this.paletteIndex = (this.paletteIndex + 1 + randi(0,1)) % PALETTES.length;
-          game.whisper("THE COLOR DIES. THEN RETURNS WRONG.", 2.2);
-          this.glitch = 0.35;
-        }
-      }
-
-      this.invertMoveT = Math.max(0, this.invertMoveT-dt);
-      this.paletteT = Math.max(0, this.paletteT-dt);
-      this.glitch = Math.max(0, this.glitch-dt);
-
-      game.input.map.invertMove = this.invertMoveT > 0;
-    }
-    palette(baseIndex){
-      return (this.paletteT>0) ? PALETTES[this.paletteIndex] : PALETTES[baseIndex];
-    }
-    post(ctx, game, pal){
-      const w=ctx.canvas.width, h=ctx.canvas.height;
-
-      // glitch kick
-      if(this.glitch>0){
-        const k=this.glitch;
-        const dx=(Math.sin(game.time*40)*2)*k;
-        const dy=(Math.cos(game.time*27)*1)*k;
-        ctx.globalAlpha=0.75;
-        ctx.drawImage(ctx.canvas, dx, dy);
-        ctx.globalAlpha=1;
-      }
-
-      // scanlines
-      ctx.globalAlpha=this.scan;
-      ctx.fillStyle="#000";
-      for(let y=0;y<h;y+=2) ctx.fillRect(0,y,w,1);
-      ctx.globalAlpha=1;
-
-      // noise
-      const dots = Math.floor(w*h*(0.008 + this.noise*0.05));
-      ctx.globalAlpha = 0.10 + this.noise*0.22;
-      ctx.fillStyle = "#fff";
-      for(let i=0;i<dots;i++){
-        ctx.fillRect((Math.random()*w)|0, (Math.random()*h)|0, 1, 1);
-      }
-      ctx.globalAlpha=1;
-
-      // vignette (cheap borders)
-      ctx.globalAlpha=0.10 + this.vignette*0.18;
-      ctx.fillStyle="#000";
-      const b=10;
-      ctx.fillRect(0,0,w,b); ctx.fillRect(0,h-b,w,b);
-      ctx.fillRect(0,0,b,h); ctx.fillRect(w-b,0,b,h);
-      ctx.globalAlpha=1;
-
-      // sanity wash (SAFE even if no player)
-      const p = game.player;
-      const sanity = p ? (p.sanity/p.sanityMax) : 1;
-      const wash = clamp(1-sanity, 0, 1);
-      if(wash>0.02){
-        ctx.globalAlpha = wash*0.10;
-        ctx.fillStyle = pal.playerAccent;
-        ctx.fillRect(0,0,w,h);
-        ctx.globalAlpha=1;
-      }
-    }
-  }
-
-  /*********************
-   * Lore
-   *********************/
-  const LORE = [
-    {
-      base:
-`{NAME}, I saw you in the glass between frames.
-The Angels are not outside. They are edits.
-
-Do not shoot what wanders.
-Do not make a mistake you cannot rewind.`,
-      tone:[
-        `Clinical note: Subject {NAME} exhibits corridor fixation.\nIf the girl appears, keep your finger off the trigger.`,
-        `{NAME}… please.\nIf you see her, lower the weapon. She’s real. She’s warm.`,
-        `{NAME}, you think you’re brave?\nTry not pulling the trigger when it matters.`
-      ]
-    },
-    {
-      base:
-`The fog is a language.
-It speaks in spawn points and half-doors.
-
-Cross the threshold and the air will sharpen.
-Then the Angels will remember you.`,
-      tone:[
-        `You already know what comes after the line, {NAME}.`,
-        `I’m sorry, {NAME}. The line is hungry.`,
-        `Step over it, {NAME}. Let it come.`
-      ]
-    },
-    {
-      base:
-`There are two kinds of silence:
-the one you hear,
-and the one that aims back.
-
-Sanity boosters help, but they also lie.`,
-      tone:[
-        `No miracles. Just management, {NAME}.`,
-        `Hold on, {NAME}. Breathe between shots.`,
-        `Drink the lie, {NAME}. Fight anyway.`
-      ]
-    }
-  ];
-  function loreText(idx, name, avatar){
-    const L = LORE[idx % LORE.length];
-    return (L.base + "\n\n—\n" + (L.tone[avatar]||""))
-      .replaceAll("{NAME}", name);
-  }
-
-  /*********************
-   * Game
-   *********************/
-  class Game{
-    constructor(canvas){
-      this.canvas = canvas;
-      this.ctx = canvas.getContext("2d", {alpha:false});
-      this.ctx.imageSmoothingEnabled=false;
-
-      // Low-res buffer (pixel look)
-      this.buffer = document.createElement("canvas");
-      this.bctx = this.buffer.getContext("2d", {alpha:false});
-      this.bctx.imageSmoothingEnabled=false;
-
-      this.input = new Input(canvas);
-      this.audio = new AudioManager();
-      this.fx = new FX();
-      this.madness = new Madness();
-
-      this.state = "menu"; // menu|playing|lore|gameover
-      this.time = 0;
-
-      this.rw = 320;
-      this.rh = 180;
-      this.cam = {x:0,y:0};
-
-      this.world = new World();
-      this.tension = new Tension();
-
-      this.player = null;
-      this.daughter = null;
-      this.enemies = [];
-      this.bullets = [];
-      this.notes = [];
-      this.powerups = [];
-
-      this.collectedNotes = 0;
-      this.whispers = []; // {t,text}
-
-      this.basePaletteIndex = 0;
-
-      this.resize();
-      window.addEventListener("resize",()=>this.resize());
-
-      this.seedPickups();
-
-      this._last = performance.now();
-      requestAnimationFrame(()=>this.tick());
-    }
-
-    resize(){
-      const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-      this.canvas.width = Math.max(1, (innerWidth*dpr)|0);
-      this.canvas.height= Math.max(1, (innerHeight*dpr)|0);
-
-      // Keep width 320, adjust height to aspect (minimum 180)
-      const aspect = innerWidth / Math.max(1, innerHeight);
-      this.rw = 320;
-      this.rh = Math.max(180, Math.floor(this.rw / Math.max(0.55, aspect)));
-
-      this.buffer.width = this.rw;
-      this.buffer.height= this.rh;
-
-      this.ctx.imageSmoothingEnabled=false;
-      this.bctx.imageSmoothingEnabled=false;
-    }
-
-    seedPickups(){
-      this.notes.length=0;
-      this.powerups.length=0;
-
-      const noteXs = [260, 740, 1180, 1520];
-      for(let i=0;i<noteXs.length;i++){
-        const x=noteXs[i]+randi(-20,20);
-        const y=this.world.groundY - 10;
-        this.notes.push(new NoteItem(x,y, i%LORE.length));
-      }
-
-      for(let i=0;i<6;i++){
-        const x=360 + i*280 + randi(-40,40);
-        const y=this.world.groundY - 18;
-        this.powerups.push(new PowerUp(x,y, chance(0.55)?"hp":"sanity"));
-      }
-    }
-
-    startRun(name, avatar){
-      this.state="playing";
-      this.time=0;
-
-      this.world = new World();
-      this.tension = new Tension();
-      this.madness = new Madness();
-      this.fx.p.length=0;
-
-      this.enemies.length=0;
-      this.bullets.length=0;
-      this.daughter=null;
-
-      this.collectedNotes=0;
-      this.whispers.length=0;
-
-      this.seedPickups();
-
-      this.player = new Player(60, this.world.groundY-16, avatar, name);
-
-      // palette hint by avatar
-      this.basePaletteIndex = (avatar===1)?2:0;
-
-      // audio must be started via gesture; Start button counts
-      this.audio.start();
-      this.audio.setIntensity(0);
-
-      this.whisper("FOG. BREATH. A CLICKING SKY.", 2.2);
-    }
-
-    whisper(text, t=1.8){
-      this.whispers.push({text, t});
-      if(this.whispers.length>4) this.whispers.shift();
-    }
-
-    shoot(){
-      const p=this.player;
-      if(!p) return;
-
-      // aim point (screen->world in low-res)
-      const mx=this.input.mouse.x*this.rw;
-      const my=this.input.mouse.y*this.rh;
-      const aimX=this.cam.x+mx;
-      const aimY=this.cam.y+my;
-
-      // sanity drift
-      const sanity = p.sanity/p.sanityMax;
-      const drift = (1-sanity)*16;
-      const ax=aimX+rand(-drift,drift);
-      const ay=aimY+rand(-drift,drift);
-
-      const ox=p.cx + (p.facing>0?6:-6);
-      const oy=p.y + (p.crouching?7:8);
-
-      const [nx,ny]=norm(ax-ox, ay-oy);
-      const sp=220;
-
-      this.bullets.push(new Bullet(ox,oy,nx*sp,ny*sp,p.dmg));
-      this.fx.spark(ox+nx*3, oy+ny*3, 3);
-
-      // micro recoil
-      p.vx -= nx*4;
-      p.vy -= ny*3;
-
-      if(chance(0.02)) this.whisper("THE GUN REMEMBERS.", 1.8);
-      this.audio.thump(0.12);
-    }
-
-    spawnEnemyWave(){
-      const count=randi(1,3);
-      for(let i=0;i<count;i++){
-        const kind = chance(0.45) ? "fly" : "ground";
-        const x = this.cam.x + this.rw + randi(20,70);
-        const y = (kind==="fly") ? (this.world.groundY - randi(40,95)) : (this.world.groundY - 14);
-        this.enemies.push(new Enemy(x,y,kind));
-      }
-
-      // Daughter occasionally wanders in
-      if(!this.daughter && chance(0.08)){
-        this.daughter = new Daughter(this.cam.x + this.rw - randi(30,70), this.world.groundY - 14);
-        this.whisper("SHE ARRIVES WITHOUT SOUND.", 2.2);
-        this.audio.thump(0.9);
-      }
-    }
-
-    spawnPowerUp(x,y){
-      this.powerups.push(new PowerUp(x+randi(-10,10), y-randi(8,14), chance(0.55)?"hp":"sanity"));
-    }
-
-    showLore(note){
-      this.state="lore";
-      UI.loreText.textContent = loreText(note.id, this.player.name, this.player.avatarId);
-      UI.showLore(true);
-      this.audio.setIntensity(0.15);
-      this.audio.thump(0.7);
-    }
-
-    end(kind, msg){
-      this.state="gameover";
-      UI.showLore(false);
-      UI.showGameOver(true, kind==="bad", msg||"");
-      this.audio.setIntensity(kind==="bad"?0.85:0.55);
-    }
-
-    update(dt){
-      this.time += dt;
-
-      // keep some ambience even in menu
-      if(this.state==="menu"){
-        this.audio.setIntensity(0.0);
-        return;
-      }
-
-      if(this.state==="lore"){
-        // paused (but allow madness drift visuals)
-        this.audio.setIntensity(0.12);
-        return;
-      }
-
-      if(this.state!=="playing") return;
-
-      const p=this.player;
-      if(!p) return;
-
-      p.update(dt, this);
-
-      // camera
-      const targetX = p.x - this.rw*0.36;
-      this.cam.x = lerp(this.cam.x, targetX, 1 - Math.pow(0.0002, dt));
-      this.cam.x = Math.max(0, this.cam.x);
-      this.cam.y = 0;
-
-      // tension + madness + audio
-      this.tension.update(dt, this);
-      this.madness.update(dt, this);
-      this.audio.setIntensity(this.tension.heat);
-
-      // entities
-      for(const e of this.enemies) e.update(dt, this);
-      for(const b of this.bullets) b.update(dt, this);
-      for(const n of this.notes) n.update(dt);
-      for(const pu of this.powerups) pu.update(dt);
-      if(this.daughter) this.daughter.update(dt, this);
-
-      this.fx.update(dt, this.world);
-
-      // pickups
-      for(const n of this.notes){
-        if(n.dead) continue;
-        const near = aabb(p.x,p.y,p.w,p.h, n.x-2,n.y-2,n.w+4,n.h+4);
-        if(near && this.input.interact()){
-          n.dead=true;
-          this.collectedNotes++;
-          this.showLore(n);
-        }
-      }
-      for(const pu of this.powerups){
-        if(pu.dead) continue;
-        if(aabb(p.x,p.y,p.w,p.h, pu.x,pu.y,pu.w,pu.h)){
-          pu.dead=true;
-          if(pu.type==="hp"){
-            p.heal(26);
-            this.whisper("FLESH REMEMBERS HOW TO CLOSE.", 1.8);
-          }else{
-            p.calm(34);
-            this.madness.invertMoveT = 0;
-            this.madness.paletteT = 0;
-            this.madness.glitch = 0.25;
-            this.whisper("THE WORLD STOPS LAUGHING (FOR NOW).", 1.8);
-          }
-          this.audio.thump(0.6);
-        }
-      }
-
-      // bullets hit enemies / daughter
-      for(const b of this.bullets){
-        if(b.dead) continue;
-
-        if(this.daughter && aabb(b.x,b.y,b.w,b.h, this.daughter.x,this.daughter.y,this.daughter.w,this.daughter.h)){
-          b.dead=true;
-          this.fx.blood(this.daughter.cx,this.daughter.cy,24);
-          this.end("bad", "Bad Ending: You shot The Daughter.\n\nThe fog congratulates you. The screen refuses to forgive.");
-          return;
-        }
-
-        for(const e of this.enemies){
-          if(e.dead) continue;
-          if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
-            b.dead=true;
-            e.hit(b.damage, this);
-            break;
-          }
-        }
-      }
-
-      // cleanup
-      this.enemies = this.enemies.filter(e=>!e.dead);
-      this.bullets = this.bullets.filter(b=>!b.dead);
-      this.notes = this.notes.filter(n=>!n.dead);
-      this.powerups = this.powerups.filter(pu=>!pu.dead);
-
-      // whispers
-      for(const w of this.whispers) w.t -= dt;
-      this.whispers = this.whispers.filter(w=>w.t>0);
-
-      if(p.hp<=0){
-        this.end("normal", "You collapsed into the fog.\nThe Angels kept walking.");
-      }
-    }
-
-    draw(){
-      const pal = this.madness.palette(this.basePaletteIndex);
-
-      // background always draws (menu/gameover too)
-      this.world.draw(this.bctx, this.cam, pal, this.time);
-
-      // render entities depending on state
-      if(this.player) this.player.draw(this.bctx, this.cam, pal);
-      for(const n of this.notes) n.draw(this.bctx, this.cam, pal);
-      for(const pu of this.powerups) pu.draw(this.bctx, this.cam, pal);
-      if(this.daughter) this.daughter.draw(this.bctx, this.cam, pal);
-      for(const e of this.enemies) e.draw(this.bctx, this.cam, pal);
-      for(const b of this.bullets) b.draw(this.bctx, this.cam, pal);
-      this.fx.draw(this.bctx, this.cam, pal);
-
-      // HUD
-      this.drawHUD(this.bctx, pal);
-
-      // post
-      this.madness.post(this.bctx, this, pal);
-
-      // upscale to real canvas with SAFE scale>=1
-      const cw=this.canvas.width, ch=this.canvas.height;
-
-      this.ctx.imageSmoothingEnabled=false;
-      this.ctx.fillStyle="#000";
-      this.ctx.fillRect(0,0,cw,ch);
-
-      const scale = Math.max(1, Math.floor(Math.min(cw/this.rw, ch/this.rh))); // ✅ clamp
-      const dw = this.rw * scale;
-      const dh = this.rh * scale;
-      const dx = ((cw - dw)/2)|0;
-      const dy = ((ch - dh)/2)|0;
-
-      this.ctx.drawImage(this.buffer, 0,0,this.rw,this.rh, dx,dy,dw,dh);
-    }
-
-    drawHUD(ctx, pal){
-      const p=this.player;
-
-      // whisper text even in menu (so you see it’s alive)
-      ctx.font = "10px ui-monospace, monospace";
-      ctx.fillStyle = pal.uiDim;
-
-      // crosshair (always)
-      const mx=this.input.mouse.x*this.rw;
-      const my=this.input.mouse.y*this.rh;
-      ctx.globalAlpha=0.8;
-      ctx.strokeStyle=pal.uiDim;
-      ctx.beginPath();
-      ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
-      ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
-      ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
-      ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
-      ctx.stroke();
-      ctx.globalAlpha=1;
-
-      // bars only if player exists
-      if(p){
-        const x=8,y=8,w=110,h=6;
-
-        // HP
-        ctx.fillStyle=pal.outline; ctx.fillRect(x-1,y-1,w+2,h+2);
-        ctx.fillStyle="#000"; ctx.fillRect(x,y,w,h);
-        ctx.fillStyle=pal.hp; ctx.fillRect(x,y, (w*(p.hp/p.hpMax))|0, h);
-
-        // Sanity
-        const y2=y+10;
-        ctx.fillStyle=pal.outline; ctx.fillRect(x-1,y2-1,w+2,h+2);
-        ctx.fillStyle="#000"; ctx.fillRect(x,y2,w,h);
-        ctx.fillStyle=pal.sanity; ctx.fillRect(x,y2, (w*(p.sanity/p.sanityMax))|0, h);
-
-        ctx.fillStyle=pal.ui;
-        const label = (this.tension.mode==="frenetic") ? "FRENETIC MODE" : "ATMOSPHERIC MODE";
-        ctx.fillText(label, x, y2+18);
-
-        if(this.daughter){
-          ctx.fillStyle=pal.daughterAlt;
-          ctx.fillText("PROTECT THE DAUGHTER", x, y2+30);
-        }
-
-        // hint for note pickup if near any note
-        let nearNote=false;
-        for(const n of this.notes){
-          if(aabb(p.x,p.y,p.w,p.h, n.x-4,n.y-4,n.w+8,n.h+8)){ nearNote=true; break; }
-        }
-        if(nearNote){
-          ctx.fillStyle=pal.uiDim;
-          ctx.fillText("Press E to pick up", x, y2+42);
-        }
-      }
-
-      // whispers bottom
-      let yy = ctx.canvas.height - 10;
-      for(const m of this.whispers.slice(-2)){
-        ctx.globalAlpha = clamp(m.t/2,0,1)*0.9;
-        ctx.fillStyle = pal.uiDim;
-        ctx.fillText(m.text, 8, yy);
-        yy -= 10;
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    tick(){
-      const now=performance.now();
-      let dt=(now-this._last)/1000;
-      this._last=now;
-      dt=Math.min(dt,1/20);
-
-      // close lore with Space
-      if(this.state==="lore" && this.input.consumeSpace()){
-        this.state="playing";
-        UI.showLore(false);
-      }
-
-      this.update(dt);
-
-      // IMPORTANT: clear low-res buffer each frame
-      this.bctx.clearRect(0,0,this.rw,this.rh);
-
-      this.draw();
-      requestAnimationFrame(()=>this.tick());
-    }
-  }
-
-  /*********************
-   * UI
-   *********************/
-  const UI = {
-    menu: document.getElementById("menuOverlay"),
-    lore: document.getElementById("loreOverlay"),
-    loreText: document.getElementById("loreText"),
-    gameOver: document.getElementById("gameOverOverlay"),
-    gameOverTitle: document.getElementById("gameOverTitle"),
-    gameOverBody: document.getElementById("gameOverBody"),
-    endingBadge: document.getElementById("endingBadge"),
-    showMenu(v){ this.menu.style.display = v ? "grid" : "none"; },
-    showLore(v){ this.lore.style.display = v ? "grid" : "none"; },
-    showGameOver(v, bad, body){
-      this.gameOver.style.display = v ? "grid" : "none";
-      if(!v) return;
-      this.gameOverTitle.textContent = bad ? "BAD ENDING" : "GAME OVER";
-      this.gameOverBody.textContent = body||"";
-      this.endingBadge.textContent = bad ? "Bad Ending" : "Ending";
-      this.endingBadge.className = "badge " + (bad ? "bad" : "good");
-    }
-  };
-
-  /*********************
-   * Boot
-   *********************/
-  const canvas = document.getElementById("game");
-  const game = new Game(canvas);
-
-  // avatar select
-  let avatarId = 0;
-  const chips = Array.from(document.querySelectorAll(".chip"));
-  chips.forEach(ch=>{
-    ch.addEventListener("click", ()=>{
-      chips.forEach(x=>x.classList.remove("sel"));
-      ch.classList.add("sel");
-      avatarId = parseInt(ch.dataset.avatar,10)||0;
     });
-  });
+  }
+}
 
-  const playerName = document.getElementById("playerName");
-  const startBtn = document.getElementById("startBtn");
-  const closeLoreBtn = document.getElementById("closeLoreBtn");
-  const retryBtn = document.getElementById("retryBtn");
-  const backBtn = document.getElementById("backBtn");
+class Player extends Entity {
+  constructor() {
+    super(200, 0, 16, 32);
+    this.speed = 180;
+    this.hp = 100;
+    this.sanity = 100;
+    this.maxHp = 100;
+    this.lantern = 150; // Radius
+    this.facing = 1;
+    this.cooldown = 0;
+  }
+  update(dt, input, world) {
+    // Horizontal
+    let dir = 0;
+    if (input.keys['KeyA']) dir = -1;
+    if (input.keys['KeyD']) dir = 1;
+    this.vx = dir * this.speed;
+    if (dir !== 0) this.facing = dir;
 
-  function start(){
-    const name = (playerName.value||"Unnamed").trim().slice(0,20) || "Unnamed";
-    playerName.value = name;
+    // Jump
+    if (input.keys['KeyW'] && this.grounded) {
+      this.vy = -450; // Increased jump power
+      Audio.play('jump');
+      this.grounded = false;
+    }
 
-    UI.showMenu(false);
-    UI.showGameOver(false);
-    UI.showLore(false);
+    super.update(dt, world);
 
-    // Start audio and game
-    game.audio.start();
-    game.startRun(name, avatarId);
+    // Shooting
+    if (this.cooldown > 0) this.cooldown -= dt;
+    if (input.mouse.down && this.cooldown <= 0) {
+      this.cooldown = 0.15;
+      Audio.play('shoot');
+      const mx = input.mouse.x + world.camX;
+      const my = input.mouse.y;
+      const angle = Math.atan2(my - (this.y + 10), mx - (this.x + 8));
+      world.bullets.push(new Bullet(this.x + 8, this.y + 10, angle));
+      // Shooting costs a tiny bit of sanity
+      this.sanity = Math.max(0, this.sanity - 0.5);
+    }
+
+    // Sanity Decay -> Lantern Dimming
+    this.sanity = Math.max(0, this.sanity - dt * 0.8);
+    // Lantern radius linked to sanity
+    this.lantern = 50 + (this.sanity / 100) * 200;
+    
+    // Bounds
+    if (this.x < world.camX) this.x = world.camX;
   }
 
-  startBtn.addEventListener("click", start);
-  playerName.addEventListener("keydown",(e)=>{ if(e.key==="Enter") start(); });
+  draw(ctx, camX) {
+    // Body (Not just a box anymore - layers)
+    let x = this.x - camX;
+    
+    // Scarf/Cape trail
+    ctx.fillStyle = '#ff3366';
+    ctx.fillRect(x + (this.facing === 1 ? -4 : 12), this.y + 8, 8, 4);
 
-  closeLoreBtn.addEventListener("click", ()=>{
-    if(game.state==="lore"){
-      game.state="playing";
-      UI.showLore(false);
+    // Main Body
+    ctx.fillStyle = PAL.player;
+    ctx.fillRect(x, this.y, this.w, this.h);
+    
+    // Head/Goggles
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x + 2, this.y + 2, 12, 8);
+    ctx.fillStyle = '#0ff'; // Glowing eye
+    ctx.fillRect(x + (this.facing === 1 ? 8 : 4), this.y + 4, 3, 2);
+
+    // Gun
+    ctx.fillStyle = '#555';
+    ctx.fillRect(x + (this.facing === 1 ? 10 : -6), this.y + 14, 12, 4);
+  }
+}
+
+class Daughter extends Entity {
+  constructor(x) {
+    super(x, 0, 14, 24);
+    this.timer = 0;
+    this.state = 'wander'; // wander, cower
+    this.cowerTime = 0;
+  }
+  update(dt, world) {
+    const p = world.player;
+    const distToPlayer = Math.abs(p.x - this.x);
+    
+    // AI Logic
+    if (this.state === 'cower') {
+      this.vx = 0;
+      this.h = 16; // Crouch
+      this.cowerTime -= dt;
+      if (this.cowerTime <= 0) {
+        this.state = 'wander';
+        this.h = 24;
+      }
+    } else {
+      // Wander logic
+      this.timer -= dt;
+      if (this.timer <= 0) {
+        this.vx = rand(-40, 40);
+        this.timer = rand(1, 3);
+      }
+      
+      // Run away from enemies slightly
+      let nearestEnemy = null;
+      let minDst = 150;
+      world.enemies.forEach(e => {
+        const d = Math.abs(e.x - this.x);
+        if(d < minDst) { minDst = d; nearestEnemy = e; }
+      });
+      
+      if (nearestEnemy) {
+        this.vx = (this.x < nearestEnemy.x ? -1 : 1) * 60;
+      }
+      
+      // If bullets are flying near, COWER
+      world.bullets.forEach(b => {
+        if (dist(b, this) < 80) {
+          this.state = 'cower';
+          this.cowerTime = 1.5;
+        }
+      });
     }
-  });
 
-  retryBtn.addEventListener("click", ()=>{
-    UI.showGameOver(false);
-    const name = game.player ? game.player.name : (playerName.value||"Unnamed");
-    const av = game.player ? game.player.avatarId : avatarId;
-    game.startRun(name, av);
-  });
+    super.update(dt, world);
+  }
+  draw(ctx, camX) {
+    const x = this.x - camX;
+    
+    // Glow
+    ctx.fillStyle = PAL.daughterGlow;
+    ctx.beginPath(); arc(ctx, x + 7, this.y + 12, 20); ctx.fill();
 
-  backBtn.addEventListener("click", ()=>{
-    UI.showGameOver(false);
-    UI.showLore(false);
-    game.state="menu";
-    UI.showMenu(true);
-  });
+    // Body (Ghostly)
+    ctx.fillStyle = PAL.daughter;
+    // Draw dress shape
+    ctx.beginPath();
+    ctx.moveTo(x + 7, this.y);
+    ctx.lineTo(x + 14, this.y + this.h);
+    ctx.lineTo(x, this.y + this.h);
+    ctx.fill();
+    
+    // Eyes
+    ctx.fillStyle = '#005522';
+    ctx.fillRect(x + 4, this.y + 6, 2, 2);
+    ctx.fillRect(x + 9, this.y + 6, 2, 2);
 
-  // ensure menu visible on load
-  UI.showMenu(true);
-  UI.showLore(false);
-  UI.showGameOver(false);
+    if (this.state === 'cower') {
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px monospace';
+      ctx.fillText("!", x+5, this.y - 5);
+    }
+  }
+}
 
-  // also start audio on canvas click (helps browsers that are picky)
-  canvas.addEventListener("pointerdown", ()=>game.audio.start());
+class Enemy extends Entity {
+  constructor(x, y, type) {
+    super(x, y, 20, 30);
+    this.type = type; // 'walker' or 'flyer'
+    this.hp = 30;
+    if (type === 'flyer') {
+      this.w = 16; this.h = 16; this.hp = 15;
+    }
+  }
+  update(dt, world) {
+    const p = world.player;
+    const dx = p.x - this.x;
+    const dy = p.y - this.y;
+    
+    if (this.type === 'walker') {
+      this.vx = (dx > 0 ? 1 : -1) * (rand(40, 70));
+      super.update(dt, world);
+      // Jump over obstacles
+      if (this.vx === 0 && this.grounded) this.vy = -350;
+    } else {
+      // Flyer - Sine wave movement towards player
+      this.x += (dx > 0 ? 1 : -1) * 90 * dt;
+      this.y += (dy > 0 ? 1 : -1) * 30 * dt + Math.sin(Date.now()/200)*2;
+    }
 
-})();
+    // Hit Player
+    if (aabb(this, p)) {
+      p.hp -= 0.5;
+      p.sanity -= 0.2;
+      world.particles.push(new Particle(p.x, p.y, '#f00', 5));
+    }
+  }
+  draw(ctx, camX) {
+    const x = this.x - camX;
+    ctx.fillStyle = PAL.enemy;
+    
+    if (this.type === 'walker') {
+      // Glitchy shape
+      ctx.fillRect(x, this.y, this.w, this.h);
+      // Spikes
+      ctx.beginPath();
+      ctx.moveTo(x, this.y); ctx.lineTo(x-5, this.y-5); ctx.lineTo(x+5, this.y);
+      ctx.stroke();
+    } else {
+      // Flyer shape (Triangle)
+      ctx.beginPath();
+      ctx.moveTo(x, this.y); 
+      ctx.lineTo(x+this.w, this.y); 
+      ctx.lineTo(x+this.w/2, this.y+this.h);
+      ctx.fill();
+      // Wings
+      ctx.fillStyle = 'rgba(255,50,50,0.5)';
+      const flap = Math.sin(Date.now()/50) * 10;
+      ctx.fillRect(x - 10, this.y, 10, 5 + flap);
+      ctx.fillRect(x + this.w, this.y, 10, 5 + flap);
+    }
+  }
+}
+
+class Bullet {
+  constructor(x, y, ang) {
+    this.x = x; this.y = y; this.vx = Math.cos(ang)*600; this.vy = Math.sin(ang)*600;
+    this.dead = false; this.w=4; this.h=4;
+  }
+  update(dt, world) {
+    this.x += this.vx * dt; this.y += this.vy * dt;
+    if (this.y > height || this.x > world.player.x + width) this.dead = true;
+    
+    // Hit Enemy
+    world.enemies.forEach(e => {
+      if (aabb(this, e)) {
+        this.dead = true;
+        e.hp -= 10;
+        Audio.play('hit');
+        if (e.hp <= 0) {
+          e.dead = true;
+          // Spawn HP or Sanity
+          if (Math.random() > 0.7) world.pickups.push({x:e.x, y:e.y, type: Math.random()>0.5?'hp':'san'});
+        }
+        world.addParticles(this.x, this.y, '#fff', 5);
+      }
+    });
+
+    // Hit Daughter (BAD)
+    world.daughters.forEach(d => {
+      if(aabb(this, d)) {
+        gameOver('YOU KILLED THE CHILD.\nTHE CYCLE IS BROKEN.\nHOPE IS GONE.');
+      }
+    });
+    
+    // Hit Obstacle
+    world.obstacles.forEach(o => {
+      if (aabb(this, o)) { this.dead = true; world.addParticles(this.x, this.y, '#888', 3); }
+    });
+  }
+  draw(ctx, camX) {
+    ctx.fillStyle = '#ffff00';
+    ctx.fillRect(this.x - camX, this.y, 4, 4);
+  }
+}
+
+class Decoration {
+  constructor(x, type) {
+    this.x = x;
+    this.type = type; // tree, grave, house
+    this.scale = rand(0.8, 1.2);
+  }
+  draw(ctx, camX) {
+    const x = this.x - camX;
+    if (x < -200 || x > width + 200) return;
+    
+    ctx.fillStyle = '#0f0f14';
+    const y = GROUND_Y();
+    
+    if (this.type === 'tree') {
+      // Draw Dead Tree using lines
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 5*this.scale, y - 100*this.scale);
+      ctx.lineTo(x - 20*this.scale, y - 140*this.scale); // branch left
+      ctx.moveTo(x + 5*this.scale, y - 100*this.scale);
+      ctx.lineTo(x + 30*this.scale, y - 150*this.scale); // branch right
+      ctx.lineWidth = 4 * this.scale;
+      ctx.strokeStyle = '#111';
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    } else if (this.type === 'house') {
+      // Abandoned House
+      ctx.fillStyle = '#08080a';
+      ctx.fillRect(x, y - 80*this.scale, 80*this.scale, 80*this.scale);
+      // Roof
+      ctx.beginPath();
+      ctx.moveTo(x - 10, y - 80*this.scale);
+      ctx.lineTo(x + 40*this.scale, y - 130*this.scale);
+      ctx.lineTo(x + 90*this.scale, y - 80*this.scale);
+      ctx.fill();
+      // Windows (dark)
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x + 10, y - 50*this.scale, 20, 30);
+    } else {
+      // Grave
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(x, y - 20, 15, Math.PI, 0);
+      ctx.lineTo(x+15, y);
+      ctx.lineTo(x-15, y);
+      ctx.fill();
+    }
+  }
+}
+
+// --- WORLD MANAGER ---
+
+class World {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.camX = 0;
+    this.player = new Player();
+    this.bullets = [];
+    this.enemies = [];
+    this.particles = [];
+    this.obstacles = [];
+    this.pickups = [];
+    this.daughters = [];
+    this.decorations = [];
+    this.score = 0;
+    this.tension = 0; // 0 to 1
+    
+    // Generate Level Chunks
+    this.genLevel();
+  }
+
+  genLevel() {
+    let x = 400;
+    // Floor
+    for(let i=0; i<200; i++) {
+      // Obstacles (Capped height for jumpability)
+      if (Math.random() > 0.7) {
+        const h = randi(20, 50); // Player jump is ~100+
+        const w = randi(30, 80);
+        this.obstacles.push({x, y: GROUND_Y() - h, w, h});
+      }
+      
+      // Decorations
+      if (Math.random() > 0.8) {
+        const types = ['tree', 'tree', 'grave', 'house'];
+        this.decorations.push(new Decoration(x + rand(-50,50), types[randi(0,4)]));
+      }
+
+      // Enemy triggers (Spawn later)
+      
+      // Daughter spawns every 2000px roughly
+      if (i > 0 && i % 15 === 0) {
+        this.daughters.push(new Daughter(x));
+      }
+      
+      x += rand(100, 300);
+    }
+  }
+
+  addParticles(x, y, c, n) {
+    for(let i=0; i<n; i++) this.particles.push(new Particle(x,y,c, 10));
+  }
+
+  update(dt, input) {
+    this.player.update(dt, input, this);
+    
+    // Camera
+    this.camX = this.player.x - width * 0.3;
+    if (this.camX < 0) this.camX = 0;
+
+    // Entities
+    [...this.bullets, ...this.enemies, ...this.daughters, ...this.particles].forEach(e => e.update(dt, this));
+    
+    // Cleanup
+    this.bullets = this.bullets.filter(b => !b.dead);
+    this.enemies = this.enemies.filter(e => !e.dead);
+    this.particles = this.particles.filter(p => p.life > 0);
+    
+    // Pickups
+    this.pickups.forEach((p, i) => {
+      // Simple collision
+      const py = p.y - 10 + Math.sin(Date.now()/200)*5;
+      if (dist({x:p.x, y:py}, this.player) < 30) {
+        if(p.type==='hp') this.player.hp = Math.min(100, this.player.hp+25);
+        if(p.type==='san') this.player.sanity = Math.min(100, this.player.sanity+30);
+        this.pickups.splice(i, 1);
+        Audio.play('jump'); // reuse sound
+      }
+    });
+
+    // Spawning Logic (Tension Manager)
+    this.score = Math.floor(this.player.x / 10);
+    // More tension deeper in
+    const tensionTarget = Math.min(1, this.score / 500); 
+    if (Math.random() < 0.01 + (tensionTarget * 0.03)) {
+      // Spawn enemy ahead
+      const type = Math.random() > 0.7 ? 'flyer' : 'walker';
+      this.enemies.push(new Enemy(this.player.x + width + 50, GROUND_Y() - 50, type));
+    }
+
+    // Game Over Checks
+    if (this.player.hp <= 0) gameOver('PHYSICAL VESSEL DESTROYED');
+    if (this.player.sanity <= 0) gameOver('MIND FRACTURED. LOST TO THE DARKNESS.');
+  }
+
+  draw() {
+    // 1. Clear & Sky
+    ctx.fillStyle = PAL.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. Parallax / Decorations
+    this.decorations.forEach(d => d.draw(ctx, this.camX * 0.5)); // Far bg move slower
+    
+    // 3. Ground
+    ctx.fillStyle = PAL.ground;
+    ctx.fillRect(0, GROUND_Y(), width, height - GROUND_Y());
+    
+    // 4. World Objects
+    ctx.fillStyle = PAL.obs;
+    this.obstacles.forEach(o => {
+      if (o.x - this.camX < width && o.x + o.w - this.camX > 0)
+        ctx.fillRect(o.x - this.camX, o.y, o.w, o.h);
+    });
+
+    // 5. Entities
+    this.pickups.forEach(p => {
+      const y = p.y - 10 + Math.sin(Date.now()/200)*5;
+      ctx.fillStyle = p.type === 'hp' ? '#f00' : '#a0f';
+      ctx.fillRect(p.x - this.camX, y, 10, 10);
+      ctx.font = '10px monospace'; ctx.fillStyle='#fff';
+      ctx.fillText(p.type.toUpperCase(), p.x - this.camX, y-5);
+    });
+
+    this.daughters.forEach(d => d.draw(ctx, this.camX));
+    this.enemies.forEach(e => e.draw(ctx, this.camX));
+    this.player.draw(ctx, this.camX);
+    this.bullets.forEach(b => b.draw(ctx, this.camX));
+    this.particles.forEach(p => p.draw(ctx, this.camX));
+
+    // 6. LIGHTING & ATMOSPHERE SYSTEM
+    // Create a dark mask
+    ctx.globalCompositeOperation = 'multiply';
+    
+    // The "Darkness"
+    // We create a radial gradient around the player
+    const px = this.player.x - this.camX + 8;
+    const py = this.player.y + 16;
+    const rad = this.player.lantern;
+    
+    const grad = ctx.createRadialGradient(px, py, rad * 0.2, px, py, rad);
+    grad.addColorStop(0, 'white'); // Fully lit (multiply by white = no change)
+    grad.addColorStop(1, 'black'); // Pitch black (multiply by black = black)
+    
+    ctx.fillStyle = grad;
+    // Fill the whole screen with the darkness gradient
+    // BUT we need to fill the rest with black first?
+    // Actually, 'multiply' means white preserves, black darkens.
+    
+    // Fill screen with black first? No.
+    // We want to darken everything EXCEPT the player.
+    
+    // Let's use source-over with a radial gradient that is transparent in center and black outside.
+    ctx.globalCompositeOperation = 'source-over';
+    const fog = ctx.createRadialGradient(px, py, rad * 0.2, px, py, rad * 1.5);
+    fog.addColorStop(0, 'rgba(0,0,0,0)');
+    fog.addColorStop(0.5, 'rgba(0,0,0,0.4)');
+    fog.addColorStop(1, 'rgba(0,0,0,0.98)');
+    
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, width, height);
+
+    // Add Mist
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = '#111';
+    for(let i=0; i<10; i++) {
+        let mx = (Date.now()/50 + i*200) % (width + 400) - 200;
+        ctx.fillRect(mx, 0, 100, height);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+// --- MAIN LOOP & STATE ---
+const world = new World();
+let lastTime = 0;
+let gameState = 'menu'; // menu, playing, over
+
+// Input Handler
+const Input = {
+  keys: {},
+  mouse: {x:0, y:0, down:false}
+};
+window.addEventListener('keydown', e => Input.keys[e.code] = true);
+window.addEventListener('keyup', e => Input.keys[e.code] = false);
+window.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  Input.mouse.x = e.clientX - r.left;
+  Input.mouse.y = e.clientY - r.top;
+});
+window.addEventListener('mousedown', () => Input.mouse.down = true);
+window.addEventListener('mouseup', () => Input.mouse.down = false);
+
+// Arc helper
+function arc(ctx, x, y, r) { ctx.arc(x,y,r,0,Math.PI*2); }
+
+function loop(t) {
+  const dt = Math.min((t - lastTime) / 1000, 0.1);
+  lastTime = t;
+
+  if (gameState === 'playing') {
+    world.update(dt, Input);
+    world.draw();
+    
+    // UI Update
+    document.getElementById('ui_hp').style.width = world.player.hp + '%';
+    document.getElementById('ui_san').style.width = world.player.sanity + '%';
+    document.getElementById('ui_score').innerText = 'DEPTH: ' + world.score + 'm';
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// --- UI LOGIC ---
+let selectedAvatar = 0;
+window.selectAvi = (id, el) => {
+  document.querySelectorAll('.avi').forEach(d => d.classList.remove('sel'));
+  el.classList.add('sel');
+  selectedAvatar = id;
+};
+
+document.getElementById('startBtn').onclick = () => {
+  document.getElementById('menuOverlay').style.display = 'none';
+  document.getElementById('ui_layer').style.display = 'flex';
+  Audio.start();
+  gameState = 'playing';
+  world.reset();
+  
+  // Apply class stats
+  if(selectedAvatar === 1) { world.player.sanity = 150; world.player.lantern = 250; } // Occultist
+  if(selectedAvatar === 2) { world.player.hp = 200; world.player.maxHp = 200; } // Heavy
+};
+
+function gameOver(reason) {
+  gameState = 'over';
+  document.getElementById('overOverlay').style.display = 'grid';
+  document.getElementById('overReason').innerText = reason;
+  document.getElementById('ui_layer').style.display = 'none';
+}
+
+// Lore Trigger (Simple random event logic)
+setInterval(() => {
+  if (gameState !== 'playing') return;
+  if (Math.random() < 0.05 && world.player.sanity > 20) {
+    // Glitch text effect in console
+    console.log("THEY ARE WATCHING " + Date.now());
+  }
+}, 5000);
+
 </script>
 </body>
 </html>
