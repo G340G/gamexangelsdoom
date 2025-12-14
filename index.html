@@ -1,0 +1,1837 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LO-FI ANGELS — Retro Horror Run & Gun</title>
+  <style>
+    :root{
+      --bg:#07070a;
+      --panel:#0e0f14cc;
+      --text:#e8e8ef;
+      --muted:#a7a7b4;
+      --accent:#c83cff;
+      --danger:#ff3c5a;
+      --ok:#43ff9b;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; overflow:hidden;}
+    #wrap{position:fixed; inset:0; display:grid; place-items:stretch;}
+    canvas{width:100%; height:100%; display:block; image-rendering: pixelated; background:#000;}
+    .overlay{
+      position:absolute; inset:0; display:grid; place-items:center;
+      background: radial-gradient(ellipse at center, #0a0a12cc 0%, #05050acc 60%, #000 100%);
+      backdrop-filter: blur(2px);
+    }
+    .panel{
+      width:min(820px, 92vw);
+      background:var(--panel);
+      border:1px solid #2a2a3a;
+      border-radius:16px;
+      box-shadow: 0 12px 48px #000a;
+      padding:18px 18px 14px;
+    }
+    .title{
+      display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+      letter-spacing:0.12em; text-transform:uppercase;
+      font-weight:800; font-size:20px;
+    }
+    .title small{font-weight:600; color:var(--muted); letter-spacing:0.06em; text-transform:none;}
+    .grid{display:grid; grid-template-columns: 1.2fr 1fr; gap:14px; margin-top:12px;}
+    @media (max-width:760px){ .grid{grid-template-columns:1fr; } }
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    label{font-size:12px; color:var(--muted); letter-spacing:0.04em;}
+    input[type="text"]{
+      flex:1; min-width:220px;
+      background:#0b0b12; border:1px solid #2a2a3a; color:var(--text);
+      padding:10px 12px; border-radius:12px; outline:none;
+    }
+    input[type="text"]:focus{border-color:#5a3cff; box-shadow:0 0 0 3px #5a3cff22;}
+    .avatar{
+      display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;
+    }
+    .chip{
+      background:#0b0b12; border:1px solid #2a2a3a; border-radius:14px;
+      padding:10px 10px; cursor:pointer; user-select:none;
+      transition: transform .08s ease, border-color .08s ease, box-shadow .08s ease;
+    }
+    .chip:hover{transform: translateY(-1px); border-color:#4c4c66;}
+    .chip.sel{border-color:var(--accent); box-shadow:0 0 0 3px #c83cff22;}
+    .chip .name{font-weight:700; font-size:13px;}
+    .chip .desc{font-size:12px; color:var(--muted); margin-top:4px; line-height:1.25;}
+    .btn{
+      appearance:none; border:1px solid #2a2a3a; background:#0b0b12; color:var(--text);
+      padding:10px 14px; border-radius:14px; cursor:pointer; font-weight:700;
+      letter-spacing:0.03em;
+      transition: transform .08s ease, border-color .08s ease, box-shadow .08s ease;
+    }
+    .btn:hover{transform: translateY(-1px); border-color:#4c4c66;}
+    .btn.primary{border-color:#5a3cff; box-shadow:0 0 0 3px #5a3cff22;}
+    .btn.danger{border-color:#ff3c5a; box-shadow:0 0 0 3px #ff3c5a22;}
+    .help{
+      margin-top:10px;
+      color:var(--muted);
+      font-size:12px; line-height:1.35;
+    }
+    .kbd{display:inline-block; padding:2px 7px; border:1px solid #2a2a3a; border-bottom-color:#1a1a24; border-radius:8px; background:#0b0b12; color:#d8d8e6; font-weight:700;}
+    /* Lore / Gameover modals */
+    #loreOverlay, #gameOverOverlay{display:none;}
+    .loreText{
+      white-space:pre-wrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size:13px;
+      line-height:1.45;
+      color:#ececf6;
+      background:#07070bcc;
+      border:1px solid #2a2a3a;
+      border-radius:14px;
+      padding:12px 12px;
+      max-height:min(52vh, 360px);
+      overflow:auto;
+    }
+    .subrow{display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;}
+    .badge{
+      font-size:12px; color:#e9e9ff;
+      padding:4px 10px; border-radius:999px;
+      border:1px solid #2a2a3a; background:#0b0b12;
+    }
+    .badge.bad{border-color:#ff3c5a55;}
+    .badge.good{border-color:#43ff9b55;}
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game"></canvas>
+
+    <!-- START / CHARACTER -->
+    <div id="menuOverlay" class="overlay">
+      <div class="panel">
+        <div class="title">LO-FI ANGELS <small>run & gun / psychological dread</small></div>
+
+        <div class="grid">
+          <div>
+            <div class="row">
+              <label for="playerName">Player Name</label>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <input id="playerName" type="text" maxlength="20" placeholder="Type your name…" value="defer" />
+              <button id="startBtn" class="btn primary">Start</button>
+            </div>
+
+            <div class="help">
+              Controls: <span class="kbd">W</span> jump · <span class="kbd">A</span><span class="kbd">D</span> move · <span class="kbd">S</span> crouch · Mouse aim · Click/hold shoot · <span class="kbd">E</span> pick up<br/>
+              Protect <b>The Daughter</b>. If you shoot her: <b style="color:var(--danger)">Bad Ending</b>.
+            </div>
+          </div>
+
+          <div>
+            <label>Choose Avatar</label>
+            <div class="avatar" style="margin-top:6px;">
+              <div class="chip sel" data-avatar="0">
+                <div class="name">The Drifter</div>
+                <div class="desc">Blunt, exhausted. Lore is cold and clinical.</div>
+              </div>
+              <div class="chip" data-avatar="1">
+                <div class="name">The Medium</div>
+                <div class="desc">Sensitive. Lore becomes intimate and pleading.</div>
+              </div>
+              <div class="chip" data-avatar="2">
+                <div class="name">The Bruiser</div>
+                <div class="desc">Violent resilience. Lore becomes accusatory.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="help">
+          Tip: The world starts in <b>Atmospheric Mode</b> (no spawns). Cross the <i>threshold</i> to awaken the Angels.
+        </div>
+      </div>
+    </div>
+
+    <!-- LORE / NOTE MODAL -->
+    <div id="loreOverlay" class="overlay">
+      <div class="panel">
+        <div class="title">FOUND NOTE <small>the paper feels warm</small></div>
+        <div id="loreText" class="loreText" style="margin-top:12px;"></div>
+        <div class="subrow">
+          <span class="badge">Game paused</span>
+          <button id="closeLoreBtn" class="btn">Continue <span class="kbd">Space</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME OVER -->
+    <div id="gameOverOverlay" class="overlay">
+      <div class="panel">
+        <div class="title" id="gameOverTitle">GAME OVER</div>
+        <div id="gameOverBody" class="help" style="font-size:13px; margin-top:10px;"></div>
+        <div class="subrow">
+          <span id="endingBadge" class="badge bad">Bad Ending</span>
+          <div class="row">
+            <button id="retryBtn" class="btn primary">Retry</button>
+            <button id="backBtn" class="btn">Back to Menu</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    /*********************************************************************
+     * Small helpers
+     *********************************************************************/
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const lerp  = (a, b, t) => a + (b - a) * t;
+    const rand  = (a=0, b=1) => a + Math.random() * (b - a);
+    const randi = (a, b) => (a + (Math.random() * (b - a + 1) | 0));
+    const chance = (p) => Math.random() < p;
+
+    function aabb(ax, ay, aw, ah, bx, by, bw, bh){
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    function vecLen(x,y){ return Math.hypot(x,y); }
+    function norm(x,y){
+      const l = Math.hypot(x,y) || 1;
+      return [x/l, y/l];
+    }
+
+    /*********************************************************************
+     * Palettes (swap for madness)
+     *********************************************************************/
+    const PALETTES = [
+      // "Silent asphalt"
+      {
+        name: "Asphalt",
+        sky: "#05050a",
+        fog: "#0b0b14",
+        ground: "#111122",
+        wall: "#1a1a2d",
+        outline: "#2a2a44",
+        player: "#d8d8ef",
+        playerAccent: "#c83cff",
+        enemy: "#ff3c5a",
+        enemyAlt: "#ffb3c0",
+        daughter: "#43ff9b",
+        daughterAlt: "#c9ffe5",
+        note: "#f3f3ff",
+        powerHP: "#ff3c5a",
+        powerSanity: "#c83cff",
+        ui: "#e8e8ef",
+        uiDim: "#a7a7b4",
+        blood: "#7b0016",
+      },
+      // "Inverse fever"
+      {
+        name: "Inverse",
+        sky: "#e9e9ff",
+        fog: "#d3d3ff",
+        ground: "#cfcfee",
+        wall: "#b8b8da",
+        outline: "#0c0c1c",
+        player: "#101018",
+        playerAccent: "#2e6cff",
+        enemy: "#0a0a0f",
+        enemyAlt: "#5b5b74",
+        daughter: "#0a0a0f",
+        daughterAlt: "#2f2f44",
+        note: "#101018",
+        powerHP: "#0a0a0f",
+        powerSanity: "#2e6cff",
+        ui: "#101018",
+        uiDim: "#2a2a44",
+        blood: "#2a2a44",
+      },
+      // "Rust church"
+      {
+        name: "Rust",
+        sky: "#070608",
+        fog: "#120d10",
+        ground: "#1a1114",
+        wall: "#26181e",
+        outline: "#3a222a",
+        player: "#e9e3dc",
+        playerAccent: "#ffb24a",
+        enemy: "#ff3c5a",
+        enemyAlt: "#ffd3a0",
+        daughter: "#43ff9b",
+        daughterAlt: "#e6fff3",
+        note: "#fff3e6",
+        powerHP: "#ff3c5a",
+        powerSanity: "#ffb24a",
+        ui: "#e9e3dc",
+        uiDim: "#b6a9a0",
+        blood: "#6c0012",
+      }
+    ];
+
+    /*********************************************************************
+     * Input (supports inversion / madness)
+     *********************************************************************/
+    class Input {
+      constructor(canvas){
+        this.canvas = canvas;
+        this.keys = new Set();
+        this.mouse = {x:0, y:0, down:false, justPressed:false};
+        this.map = { invertMove:false, invertAim:false };
+
+        window.addEventListener("keydown", (e) => {
+          if(["KeyW","KeyA","KeyS","KeyD","KeyE","Space","Escape"].includes(e.code)) e.preventDefault();
+          this.keys.add(e.code);
+        }, {passive:false});
+        window.addEventListener("keyup", (e) => {
+          this.keys.delete(e.code);
+        });
+
+        canvas.addEventListener("mousemove", (e) => {
+          const r = canvas.getBoundingClientRect();
+          this.mouse.x = (e.clientX - r.left) / r.width;
+          this.mouse.y = (e.clientY - r.top)  / r.height;
+        });
+
+        canvas.addEventListener("mousedown", () => {
+          this.mouse.down = true;
+          this.mouse.justPressed = true;
+        });
+        window.addEventListener("mouseup", () => {
+          this.mouse.down = false;
+        });
+      }
+      down(code){ return this.keys.has(code); }
+      consumeMousePressed(){
+        const v = this.mouse.justPressed;
+        this.mouse.justPressed = false;
+        return v;
+      }
+      axisX(){
+        let x = (this.down("KeyD") ? 1 : 0) - (this.down("KeyA") ? 1 : 0);
+        if(this.map.invertMove) x *= -1;
+        return x;
+      }
+      jumpPressed(){ // W
+        return this.down("KeyW");
+      }
+      crouch(){ // S
+        return this.down("KeyS");
+      }
+      interact(){ // E
+        return this.down("KeyE");
+      }
+    }
+
+    /*********************************************************************
+     * Audio (procedural horror drone + noise using WebAudio API)
+     *********************************************************************/
+    class AudioManager{
+      constructor(){
+        this.ctx = null;
+        this.master = null;
+
+        this.droneOsc1 = null;
+        this.droneOsc2 = null;
+        this.noise = null;
+        this.noiseGain = null;
+        this.filter = null;
+
+        this.lfo = null;
+        this.lfoGain = null;
+
+        this.started = false;
+        this.intensity = 0; // 0..1
+      }
+
+      start(){
+        if(this.started) return;
+        const AC = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AC();
+        this.master = this.ctx.createGain();
+        this.master.gain.value = 0.35;
+        this.master.connect(this.ctx.destination);
+
+        // Filter for the entire bed
+        this.filter = this.ctx.createBiquadFilter();
+        this.filter.type = "lowpass";
+        this.filter.frequency.value = 380;
+        this.filter.Q.value = 0.8;
+        this.filter.connect(this.master);
+
+        // Drone oscillators (detuned) -> filter
+        this.droneOsc1 = this.ctx.createOscillator();
+        this.droneOsc2 = this.ctx.createOscillator();
+        this.droneOsc1.type = "sawtooth";
+        this.droneOsc2.type = "triangle";
+        this.droneOsc1.frequency.value = 48;
+        this.droneOsc2.frequency.value = 52;
+
+        const droneGain = this.ctx.createGain();
+        droneGain.gain.value = 0.10;
+
+        this.droneOsc1.connect(droneGain);
+        this.droneOsc2.connect(droneGain);
+        droneGain.connect(this.filter);
+
+        // Noise bed
+        const bufferSize = 2 * this.ctx.sampleRate;
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const out = noiseBuffer.getChannelData(0);
+        for(let i=0;i<bufferSize;i++){
+          // biased noise (slightly) for grit
+          out[i] = (Math.random()*2-1) * (0.6 + 0.4*Math.random());
+        }
+        this.noise = this.ctx.createBufferSource();
+        this.noise.buffer = noiseBuffer;
+        this.noise.loop = true;
+
+        this.noiseGain = this.ctx.createGain();
+        this.noiseGain.gain.value = 0.03;
+
+        // bandpass-ish feeling by chaining
+        const noiseHP = this.ctx.createBiquadFilter();
+        noiseHP.type = "highpass";
+        noiseHP.frequency.value = 120;
+
+        this.noise.connect(noiseHP);
+        noiseHP.connect(this.noiseGain);
+        this.noiseGain.connect(this.filter);
+
+        // LFO to wobble filter cutoff (uneasy breathing)
+        this.lfo = this.ctx.createOscillator();
+        this.lfo.type = "sine";
+        this.lfo.frequency.value = 0.08;
+
+        this.lfoGain = this.ctx.createGain();
+        this.lfoGain.gain.value = 140; // Hz swing
+
+        this.lfo.connect(this.lfoGain);
+        this.lfoGain.connect(this.filter.frequency);
+
+        // start nodes
+        const now = this.ctx.currentTime;
+        this.droneOsc1.start(now);
+        this.droneOsc2.start(now);
+        this.noise.start(now);
+        this.lfo.start(now);
+
+        this.started = true;
+      }
+
+      setIntensity(v){
+        this.intensity = clamp(v, 0, 1);
+        if(!this.started) return;
+
+        const t = this.ctx.currentTime;
+        const i = this.intensity;
+
+        // more intensity: louder noise, higher cutoff, more detune drift
+        this.noiseGain.gain.setTargetAtTime(0.02 + i*0.12, t, 0.08);
+        this.filter.frequency.setTargetAtTime(260 + i*1200, t, 0.12);
+        this.master.gain.setTargetAtTime(0.28 + i*0.25, t, 0.12);
+
+        // detune and subtle beating
+        this.droneOsc1.detune.setTargetAtTime(-18 - i*35, t, 0.12);
+        this.droneOsc2.detune.setTargetAtTime( 12 + i*55, t, 0.12);
+        this.droneOsc1.frequency.setTargetAtTime(44 + i*12, t, 0.12);
+        this.droneOsc2.frequency.setTargetAtTime(49 + i*20, t, 0.12);
+
+        this.lfo.frequency.setTargetAtTime(0.06 + i*0.9, t, 0.12);
+        this.lfoGain.gain.setTargetAtTime(120 + i*420, t, 0.12);
+      }
+
+      oneShotThump(amount=1){
+        if(!this.started) return;
+        const t = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = 90;
+
+        const g = this.ctx.createGain();
+        g.gain.value = 0.0;
+
+        osc.connect(g);
+        g.connect(this.master);
+
+        // quick pitch drop + short envelope
+        osc.frequency.setValueAtTime(110, t);
+        osc.frequency.exponentialRampToValueAtTime(45, t+0.12);
+
+        const peak = 0.10 * amount;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(peak, t+0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+
+        osc.start(t);
+        osc.stop(t+0.22);
+      }
+    }
+
+    /*********************************************************************
+     * World / Level (simple ground + obstacles + threshold trigger)
+     *********************************************************************/
+    class World {
+      constructor(){
+        this.groundY = 140; // in low-res pixels (we render to low-res buffer)
+        this.blocks = [];
+        this.thresholdX = 900; // crossing triggers Frenetic Mode
+        this.make();
+      }
+
+      make(){
+        this.blocks.length = 0;
+        // Platforms / obstacles in a long corridor
+        let x = 120;
+        for(let i=0;i<70;i++){
+          x += randi(70, 140);
+          if(chance(0.55)){
+            const w = randi(26, 70);
+            const h = randi(12, 45);
+            const y = this.groundY - h - (chance(0.4) ? randi(18, 40) : 0);
+            this.blocks.push({x, y, w, h});
+          }
+        }
+        // A couple of "walls" to create chokepoints
+        this.blocks.push({x:520, y:this.groundY-38, w:18, h:38});
+        this.blocks.push({x:1260, y:this.groundY-54, w:22, h:54});
+        this.blocks.push({x:1600, y:this.groundY-30, w:16, h:30});
+      }
+
+      draw(ctx, cam, pal){
+        // background fog slabs (parallax-ish)
+        ctx.fillStyle = pal.sky;
+        ctx.fillRect(0,0, ctx.canvas.width, ctx.canvas.height);
+
+        // distant fog bands
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = pal.fog;
+        for(let i=0;i<6;i++){
+          const yy = 18 + i*18 + Math.sin((cam.x*0.002) + i)*2;
+          ctx.fillRect(0, yy, ctx.canvas.width, 10);
+        }
+        ctx.globalAlpha = 1;
+
+        // ground
+        ctx.fillStyle = pal.ground;
+        ctx.fillRect(0, this.groundY - cam.y, ctx.canvas.width, ctx.canvas.height);
+
+        // blocks
+        for(const b of this.blocks){
+          const sx = Math.floor(b.x - cam.x);
+          const sy = Math.floor(b.y - cam.y);
+          if(sx + b.w < -40 || sx > ctx.canvas.width + 40) continue;
+
+          ctx.fillStyle = pal.wall;
+          ctx.fillRect(sx, sy, b.w, b.h);
+
+          ctx.strokeStyle = pal.outline;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(sx+0.5, sy+0.5, b.w-1, b.h-1);
+        }
+
+        // threshold marker (subtle)
+        const tx = Math.floor(this.thresholdX - cam.x);
+        if(tx > -60 && tx < ctx.canvas.width + 60){
+          ctx.globalAlpha = 0.7;
+          ctx.strokeStyle = pal.playerAccent;
+          for(let i=0;i<6;i++){
+            const y0 = this.groundY - cam.y - 80 + i*14;
+            ctx.beginPath();
+            ctx.moveTo(tx, y0);
+            ctx.lineTo(tx + (i%2?10:-10), y0+10);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      collideAABB(box){
+        // box: {x,y,w,h}
+        // ground
+        if(box.y + box.h > this.groundY){
+          box.y = this.groundY - box.h;
+          box.vy = 0;
+          box.onGround = true;
+        }
+        // blocks
+        for(const b of this.blocks){
+          if(!aabb(box.x, box.y, box.w, box.h, b.x, b.y, b.w, b.h)) continue;
+
+          // minimal resolution: separate along shallow axis
+          const dx1 = (b.x + b.w) - box.x;      // push left
+          const dx2 = (box.x + box.w) - b.x;    // push right
+          const dy1 = (b.y + b.h) - box.y;      // push up
+          const dy2 = (box.y + box.h) - b.y;    // push down
+
+          const minX = Math.min(dx1, dx2);
+          const minY = Math.min(dy1, dy2);
+
+          if(minX < minY){
+            if(dx1 < dx2) box.x = b.x + b.w;
+            else          box.x = b.x - box.w;
+            box.vx = 0;
+          }else{
+            if(dy1 < dy2){ // push up
+              box.y = b.y + b.h;
+              box.vy = Math.max(box.vy, 0);
+            }else{
+              box.y = b.y - box.h;
+              box.vy = 0;
+              box.onGround = true;
+            }
+          }
+        }
+      }
+    }
+
+    /*********************************************************************
+     * Entities
+     *********************************************************************/
+    class Entity{
+      constructor(x,y,w,h){
+        this.x=x; this.y=y; this.w=w; this.h=h;
+        this.vx=0; this.vy=0;
+        this.dead=false;
+      }
+      get cx(){ return this.x + this.w/2; }
+      get cy(){ return this.y + this.h/2; }
+      draw(){ /* override */ }
+      update(){ /* override */ }
+    }
+
+    class Player extends Entity{
+      constructor(x,y, avatarId, name){
+        super(x,y, 10, 16);
+        this.name = name;
+        this.avatarId = avatarId;
+
+        this.hpMax = 100;
+        this.hp = 100;
+
+        this.sanityMax = 100;
+        this.sanity = 100;
+
+        this.facing = 1;
+        this.fireCooldown = 0;
+
+        // avatar stats (subtle)
+        const A = avatarId|0;
+        this.moveSpeed = (A===2) ? 78 : (A===1 ? 72 : 74);
+        this.jumpVel   = (A===1) ? 152 : 145;
+        this.damage    = (A===2) ? 15  : (A===1 ? 12 : 13);
+        this.fireRate  = (A===0) ? 0.105 : (A===1 ? 0.12 : 0.13);
+
+        this.onGround = false;
+        this.crouching = false;
+        this.hurtFlash = 0;
+      }
+
+      hurt(dmg){
+        this.hp = clamp(this.hp - dmg, 0, this.hpMax);
+        this.hurtFlash = 0.35;
+      }
+
+      heal(amount){
+        this.hp = clamp(this.hp + amount, 0, this.hpMax);
+      }
+
+      restoreSanity(amount){
+        this.sanity = clamp(this.sanity + amount, 0, this.sanityMax);
+      }
+
+      update(dt, game){
+        const input = game.input;
+
+        // movement
+        const ax = input.axisX();
+        this.vx = ax * this.moveSpeed;
+        if(ax !== 0) this.facing = ax > 0 ? 1 : -1;
+
+        // crouch changes hitbox slightly
+        this.crouching = input.crouch();
+        if(this.crouching){
+          this.h = 12;
+        }else{
+          this.h = 16;
+        }
+
+        // jump
+        if(input.jumpPressed() && this.onGround && !this.crouching){
+          this.vy = -this.jumpVel;
+          this.onGround = false;
+          game.audio.oneShotThump(0.4);
+        }
+
+        // gravity
+        this.vy += 320 * dt;
+
+        // integrate
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.onGround = false;
+        game.world.collideAABB(this);
+
+        // shooting
+        this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+        const shooting = game.input.mouse.down;
+        if(shooting && this.fireCooldown <= 0){
+          this.fireCooldown = this.fireRate;
+          game.spawnBulletFromPlayer(this);
+          // sanity cost (very slight), feels like "staining"
+          this.sanity = clamp(this.sanity - 0.35, 0, this.sanityMax);
+        }
+
+        // bleed sanity when frenetic / low HP
+        const stress = (game.tension.mode === "frenetic" ? 0.9 : 0.15) + (this.hp < 35 ? 0.55 : 0);
+        this.sanity = clamp(this.sanity - stress * dt * 2.2, 0, this.sanityMax);
+
+        // hurt flash timer
+        this.hurtFlash = Math.max(0, this.hurtFlash - dt);
+
+        // keep within some bounds
+        this.x = Math.max(-20, this.x);
+      }
+
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y);
+
+        // outline
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx-1, sy-1, this.w+2, this.h+2);
+
+        // body
+        ctx.fillStyle = (this.hurtFlash > 0 && ((this.hurtFlash*30)|0)%2===0) ? pal.enemyAlt : pal.player;
+        ctx.fillRect(sx, sy, this.w, this.h);
+
+        // accent "eye"
+        ctx.fillStyle = pal.playerAccent;
+        const ex = sx + (this.facing>0 ? this.w-3 : 1);
+        const ey = sy + 4;
+        ctx.fillRect(ex, ey, 2, 2);
+
+        // gun stub
+        ctx.fillStyle = pal.outline;
+        const gx = sx + (this.facing>0 ? this.w : -3);
+        const gy = sy + (this.crouching ? 6 : 7);
+        ctx.fillRect(gx, gy, 3, 2);
+      }
+    }
+
+    class Bullet extends Entity{
+      constructor(x,y, vx, vy, from="player"){
+        super(x,y, 2,2);
+        this.vx=vx; this.vy=vy;
+        this.from = from;
+        this.life = 1.2;
+        this.damage = 10;
+      }
+      update(dt, game){
+        this.life -= dt;
+        if(this.life <= 0) this.dead = true;
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        // collide with world blocks (simple)
+        for(const b of game.world.blocks){
+          if(aabb(this.x,this.y,this.w,this.h, b.x,b.y,b.w,b.h)){
+            this.dead = true;
+            game.fx.spark(this.x, this.y, 6);
+            return;
+          }
+        }
+        // ground
+        if(this.y + this.h > game.world.groundY){
+          this.dead = true;
+          game.fx.spark(this.x, this.y, 5);
+        }
+      }
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y);
+        ctx.fillStyle = pal.note; // pale bullets
+        ctx.fillRect(sx, sy, this.w, this.h);
+      }
+    }
+
+    class Enemy extends Entity{
+      constructor(x,y, kind="ground"){
+        const w = kind==="fly" ? 10 : 12;
+        const h = kind==="fly" ? 10 : 14;
+        super(x,y, w, h);
+        this.kind = kind;
+        this.hp = kind==="fly" ? 22 : 32;
+        this.touchDmg = kind==="fly" ? 12 : 16;
+
+        this.wobble = rand(0, 6.28);
+        this.cool = rand(0, 0.8);
+        this.onGround = false;
+      }
+
+      update(dt, game){
+        const p = game.player;
+        this.cool = Math.max(0, this.cool - dt);
+
+        const dx = (p.cx - this.cx);
+        const dy = (p.cy - this.cy);
+
+        if(this.kind === "fly"){
+          // aggressive drift towards player
+          const [nx, ny] = norm(dx, dy + Math.sin(game.time*2 + this.wobble)*6);
+          const sp = 56 + (game.tension.mode==="frenetic" ? 22 : 0);
+          this.vx = nx * sp;
+          this.vy = ny * sp;
+
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+
+          // keep above ground a bit
+          this.y = Math.min(this.y, game.world.groundY - 22);
+        }else{
+          // ground: run + hop over obstacles sometimes
+          const dir = dx > 0 ? 1 : -1;
+          const sp = 42 + (game.tension.mode==="frenetic" ? 26 : 0);
+          this.vx = dir * sp;
+
+          // gravity
+          this.vy += 320 * dt;
+
+          // occasional hop if blocked / near player
+          if(this.onGround && Math.abs(dx) < 70 && this.cool<=0 && chance(0.18)){
+            this.vy = -rand(110, 155);
+            this.cool = rand(0.55, 1.0);
+          }
+
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+          this.onGround = false;
+          game.world.collideAABB(this);
+        }
+
+        // contact damage
+        if(aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h)){
+          if(this.cool <= 0){
+            p.hurt(this.touchDmg);
+            this.cool = 0.8;
+            game.fx.blood(p.cx, p.cy, 10);
+            game.audio.oneShotThump(0.8);
+          }
+        }
+
+        // die if far behind
+        if(this.x < game.cam.x - 140) this.dead = true;
+      }
+
+      hit(dmg, game){
+        this.hp -= dmg;
+        game.fx.blood(this.cx, this.cy, 8);
+        if(this.hp <= 0){
+          this.dead = true;
+          game.fx.gib(this.cx, this.cy, 16);
+          if(chance(0.18)) game.spawnPowerUp(this.cx, this.cy);
+        }
+      }
+
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y);
+
+        // "angel" silhouette
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx-1, sy-1, this.w+2, this.h+2);
+
+        ctx.fillStyle = pal.enemy;
+        ctx.fillRect(sx, sy, this.w, this.h);
+
+        // "wings" / spikes
+        ctx.strokeStyle = pal.enemyAlt;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if(this.kind==="fly"){
+          ctx.moveTo(sx-3, sy+3); ctx.lineTo(sx+2, sy+6);
+          ctx.moveTo(sx+this.w+3, sy+3); ctx.lineTo(sx+this.w-2, sy+6);
+          ctx.moveTo(sx+this.w/2, sy-3); ctx.lineTo(sx+this.w/2, sy+2);
+        }else{
+          ctx.moveTo(sx-2, sy+this.h-5); ctx.lineTo(sx+3, sy+this.h-8);
+          ctx.moveTo(sx+this.w+2, sy+this.h-5); ctx.lineTo(sx+this.w-3, sy+this.h-8);
+        }
+        ctx.stroke();
+
+        // tiny "face slit"
+        ctx.fillStyle = pal.note;
+        ctx.fillRect(sx + (this.kind==="fly"?4:5), sy + 5, 2, 1);
+      }
+    }
+
+    class Daughter extends Entity{
+      constructor(x,y){
+        super(x,y, 9, 14);
+        this.vx = rand(-16, 16);
+        this.vy = 0;
+        this.onGround = false;
+        this.t = rand(0, 10);
+        this.idleSwap = rand(0.8, 1.8);
+        this.notice = 0; // 0..1 visual pulse
+      }
+
+      update(dt, game){
+        this.t += dt;
+        this.idleSwap -= dt;
+        if(this.idleSwap <= 0){
+          this.vx = rand(-22, 22);
+          this.idleSwap = rand(0.7, 1.8);
+          if(chance(0.25)) this.vx *= 0.2; // pause
+        }
+
+        // gentle gravity + collision
+        this.vy += 320 * dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.onGround = false;
+        game.world.collideAABB(this);
+
+        // keep near player camera region (so she "wanders onto screen")
+        const left = game.cam.x + 18;
+        const right = game.cam.x + game.rw - 18;
+        if(this.x < left) this.vx = Math.abs(this.vx) + 6;
+        if(this.x > right) this.vx = -Math.abs(this.vx) - 6;
+
+        // a faint "noticed" pulse in frenetic mode
+        const target = (game.tension.mode==="frenetic") ? 1 : 0.3;
+        this.notice = lerp(this.notice, target, 1 - Math.pow(0.001, dt));
+      }
+
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y);
+
+        // outline
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx-1, sy-1, this.w+2, this.h+2);
+
+        // body (green-ish)
+        ctx.fillStyle = pal.daughter;
+        ctx.fillRect(sx, sy, this.w, this.h);
+
+        // "hair"/shadow cap
+        ctx.fillStyle = pal.daughterAlt;
+        ctx.fillRect(sx+1, sy+1, this.w-2, 3);
+
+        // pulsing aura (subtle)
+        ctx.globalAlpha = 0.25 * this.notice;
+        ctx.strokeStyle = pal.daughterAlt;
+        ctx.strokeRect(sx-3, sy-3, this.w+6, this.h+6);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    class NoteItem extends Entity{
+      constructor(x,y, textId=0){
+        super(x,y, 7, 6);
+        this.textId = textId;
+        this.bob = rand(0, 6.28);
+      }
+      update(dt, game){
+        this.bob += dt*2;
+      }
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y + Math.sin(this.bob)*1.2);
+
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx-1, sy-1, this.w+2, this.h+2);
+
+        ctx.fillStyle = pal.note;
+        ctx.fillRect(sx, sy, this.w, this.h);
+
+        // tiny "tear"
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx+this.w-2, sy+1, 1, 2);
+      }
+    }
+
+    class PowerUp extends Entity{
+      constructor(x,y, type="hp"){
+        super(x,y, 8, 8);
+        this.type = type; // "hp" | "sanity"
+        this.bob = rand(0, 6.28);
+      }
+      update(dt){ this.bob += dt*3; }
+      draw(ctx, cam, pal){
+        const sx = Math.floor(this.x - cam.x);
+        const sy = Math.floor(this.y - cam.y + Math.sin(this.bob)*1.4);
+
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(sx-1, sy-1, this.w+2, this.h+2);
+
+        ctx.fillStyle = (this.type==="hp") ? pal.powerHP : pal.powerSanity;
+        ctx.fillRect(sx, sy, this.w, this.h);
+
+        // icon mark
+        ctx.fillStyle = pal.note;
+        if(this.type==="hp"){
+          ctx.fillRect(sx+3, sy+1, 2, 6);
+          ctx.fillRect(sx+1, sy+3, 6, 2);
+        }else{
+          ctx.fillRect(sx+2, sy+2, 1, 4);
+          ctx.fillRect(sx+5, sy+2, 1, 4);
+          ctx.fillRect(sx+2, sy+6, 4, 1);
+        }
+      }
+    }
+
+    /*********************************************************************
+     * FX: blood, sparks, gibs, screen noise fields
+     *********************************************************************/
+    class FX{
+      constructor(){
+        this.p = []; // particles
+      }
+      blood(x,y, n=10){
+        for(let i=0;i<n;i++){
+          this.p.push({
+            x, y,
+            vx: rand(-40,40),
+            vy: rand(-90,20),
+            life: rand(0.25, 0.7),
+            kind: "blood",
+            size: rand(1,2.2),
+          });
+        }
+      }
+      spark(x,y, n=6){
+        for(let i=0;i<n;i++){
+          this.p.push({
+            x, y,
+            vx: rand(-70,70),
+            vy: rand(-70,70),
+            life: rand(0.12, 0.35),
+            kind: "spark",
+            size: rand(1,2),
+          });
+        }
+      }
+      gib(x,y, n=14){
+        for(let i=0;i<n;i++){
+          this.p.push({
+            x, y,
+            vx: rand(-90,90),
+            vy: rand(-150,40),
+            life: rand(0.35, 1.0),
+            kind: "gib",
+            size: rand(1,3),
+          });
+        }
+      }
+      update(dt, world){
+        for(const q of this.p){
+          q.life -= dt;
+          q.vy += 320 * dt * 0.55;
+          q.x += q.vx * dt;
+          q.y += q.vy * dt;
+
+          // collide with ground
+          if(q.y > world.groundY){
+            q.y = world.groundY;
+            q.vx *= 0.35;
+            q.vy *= -0.2;
+          }
+        }
+        this.p = this.p.filter(q => q.life > 0);
+      }
+      draw(ctx, cam, pal){
+        for(const q of this.p){
+          const sx = Math.floor(q.x - cam.x);
+          const sy = Math.floor(q.y - cam.y);
+          if(sx < -10 || sx > ctx.canvas.width+10) continue;
+
+          if(q.kind==="blood"){
+            ctx.fillStyle = pal.blood;
+            ctx.fillRect(sx, sy, q.size, q.size);
+          }else if(q.kind==="spark"){
+            ctx.fillStyle = pal.note;
+            ctx.fillRect(sx, sy, 1, 1);
+          }else{
+            ctx.fillStyle = pal.enemy;
+            ctx.fillRect(sx, sy, q.size, q.size);
+          }
+        }
+      }
+    }
+
+    /*********************************************************************
+     * Tension Manager (Atmospheric <-> Frenetic)
+     *********************************************************************/
+    class TensionManager{
+      constructor(){
+        this.mode = "atmospheric"; // or "frenetic"
+        this.spawnTimer = 0;
+        this.heat = 0; // 0..1
+      }
+
+      update(dt, game){
+        // Trigger: crossing threshold (or after collecting a note)
+        if(this.mode === "atmospheric"){
+          if(game.player.x > game.world.thresholdX || game.collectedNotes >= 1){
+            this.mode = "frenetic";
+            this.spawnTimer = 0.25;
+            game.messages.push({t:2.0, text:"THE AIR HARDENS. WINGS IN THE FOG."});
+            game.audio.oneShotThump(1.1);
+          }
+        }
+
+        // Heat drives audio + visuals
+        const targetHeat = (this.mode==="frenetic") ? 1 : 0;
+        this.heat = lerp(this.heat, targetHeat, 1 - Math.pow(0.0009, dt));
+
+        // Spawning
+        if(this.mode === "frenetic"){
+          this.spawnTimer -= dt;
+          const rate = 0.65 - 0.25 * this.heat; // gets faster as it "locks in"
+          if(this.spawnTimer <= 0){
+            this.spawnTimer = rand(rate*0.65, rate*1.25);
+            game.spawnEnemyWave();
+          }
+        }
+      }
+    }
+
+    /*********************************************************************
+     * Madness / Screen effects
+     *********************************************************************/
+    class EffectsManager{
+      constructor(){
+        this.noise = 0.25;
+        this.scan = 0.18;
+        this.vignette = 0.6;
+
+        this.controlInvert = 0; // seconds remaining
+        this.paletteSwap = 0;   // seconds remaining
+        this.paletteIndex = 0;
+
+        this.glitchKick = 0; // quick burst
+      }
+
+      update(dt, game){
+        const sanity = game.player.sanity / game.player.sanityMax;
+        const heat = game.tension.heat;
+
+        // noise + scanlines intensify with stress (low sanity + frenetic)
+        const stress = clamp((1 - sanity)*0.9 + heat*0.6, 0, 1);
+        this.noise = lerp(this.noise, 0.12 + stress*0.62, 1 - Math.pow(0.001, dt));
+        this.scan  = lerp(this.scan,  0.08 + stress*0.32, 1 - Math.pow(0.001, dt));
+        this.vignette = lerp(this.vignette, 0.35 + stress*0.65, 1 - Math.pow(0.001, dt));
+
+        // random mind-bending events
+        // (more likely if sanity is low)
+        const p = 0.0025 + (1 - sanity) * 0.010 + heat * 0.004;
+        if(chance(p * dt * 60)){
+          if(chance(0.55)){
+            this.controlInvert = rand(2.0, 5.0);
+            game.messages.push({t:2.2, text:"YOUR HANDS ARE NOT YOURS."});
+            this.glitchKick = 0.35;
+          }else{
+            this.paletteSwap = rand(2.0, 6.0);
+            this.paletteIndex = (this.paletteIndex + 1 + randi(0,1)) % PALETTES.length;
+            game.messages.push({t:2.2, text:"THE COLOR DIES. THEN RETURNS WRONG."});
+            this.glitchKick = 0.35;
+          }
+        }
+
+        this.controlInvert = Math.max(0, this.controlInvert - dt);
+        this.paletteSwap   = Math.max(0, this.paletteSwap - dt);
+        this.glitchKick    = Math.max(0, this.glitchKick - dt);
+
+        // apply to input map
+        game.input.map.invertMove = this.controlInvert > 0;
+        game.input.map.invertAim  = false; // optional — keep aiming reliable (feel “unfair” otherwise)
+      }
+
+      currentPalette(baseIndex){
+        // during palette swap, force alternate palette; otherwise base
+        if(this.paletteSwap > 0) return PALETTES[this.paletteIndex];
+        return PALETTES[baseIndex];
+      }
+
+      // post-process overlays in low-res space
+      post(ctx, game, pal){
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        // glitch burst: tiny screen shift / tear
+        if(this.glitchKick > 0){
+          const k = this.glitchKick;
+          const dx = (Math.sin(game.time*40) * 2) * k;
+          const dy = (Math.cos(game.time*27) * 1) * k;
+          // copy within same ctx (cheap “tear”)
+          ctx.globalAlpha = 0.75;
+          ctx.drawImage(ctx.canvas, dx, dy);
+          ctx.globalAlpha = 1;
+        }
+
+        // scanlines
+        ctx.globalAlpha = this.scan;
+        ctx.fillStyle = "#000";
+        for(let y=0;y<h;y+=2){
+          ctx.fillRect(0,y, w,1);
+        }
+        ctx.globalAlpha = 1;
+
+        // noise
+        const n = this.noise;
+        const dots = Math.floor(w*h * (0.010 + n*0.04));
+        ctx.globalAlpha = 0.10 + n*0.20;
+        ctx.fillStyle = "#fff";
+        for(let i=0;i<dots;i++){
+          const x = (Math.random()*w)|0;
+          const y = (Math.random()*h)|0;
+          ctx.fillRect(x,y,1,1);
+        }
+        ctx.globalAlpha = 1;
+
+        // vignette
+        // (simple: draw dark border bands)
+        ctx.globalAlpha = 0.10 + this.vignette*0.18;
+        ctx.fillStyle = "#000";
+        const b = 10;
+        ctx.fillRect(0,0,w,b);
+        ctx.fillRect(0,h-b,w,b);
+        ctx.fillRect(0,0,b,h);
+        ctx.fillRect(w-b,0,b,h);
+        ctx.globalAlpha = 1;
+
+        // sanity “wash”: when low sanity, tint toward accent
+        const sanity = game.player.sanity / game.player.sanityMax;
+        const wash = clamp(1 - sanity, 0, 1);
+        if(wash > 0.02){
+          ctx.globalAlpha = wash * 0.10;
+          ctx.fillStyle = pal.playerAccent;
+          ctx.fillRect(0,0,w,h);
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
+    /*********************************************************************
+     * Lore templates (dynamic insertion)
+     *********************************************************************/
+    const LORE = [
+      {
+        id: 0,
+        base:
+`{NAME}, I saw you in the glass between frames.
+The Angels are not outside. They are edits.
+
+Do not shoot what wanders.
+Do not make a mistake you cannot rewind.`,
+        tone: [
+          // Drifter
+          `Clinical note: Subject {NAME} exhibits “corridor fixation”.
+If the girl appears, keep your finger off the trigger.`,
+          // Medium
+          `{NAME}… please.
+If you see her, lower the weapon. She’s real. She’s warm.`,
+          // Bruiser
+          `{NAME}, you think you’re brave?
+Try not pulling the trigger when it matters.`
+        ]
+      },
+      {
+        id: 1,
+        base:
+`The fog is a language.
+It speaks in spawn points and half-doors.
+
+Cross the threshold and the air will sharpen.
+Then the Angels will remember you.`,
+        tone: [
+          `You already know what comes after the line, {NAME}.`,
+          `I’m sorry, {NAME}. The line is hungry.`,
+          `Step over it, {NAME}. Let it come.`
+        ]
+      },
+      {
+        id: 2,
+        base:
+`There are two kinds of silence:
+the one you hear,
+and the one that aims back.
+
+Sanity boosters help, but they also lie.`,
+        tone: [
+          `No miracles. Just management, {NAME}.`,
+          `Hold on, {NAME}. Breathe between shots.`,
+          `Drink the lie, {NAME}. Fight anyway.`
+        ]
+      }
+    ];
+
+    function buildLoreText(loreId, playerName, avatarId){
+      const L = LORE.find(x => x.id === loreId) || LORE[0];
+      const base = L.base.replaceAll("{NAME}", playerName);
+      const tone = (L.tone[avatarId|0] || "").replaceAll("{NAME}", playerName);
+      return base + "\n\n—\n" + tone;
+    }
+
+    /*********************************************************************
+     * Game
+     *********************************************************************/
+    class Game {
+      constructor(canvas){
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d", { alpha:false });
+
+        // low-res buffer for pixel aesthetic
+        this.scale = 4;     // visual upscale factor
+        this.rw = 320;      // low-res width
+        this.rh = 180;      // low-res height
+        this.buffer = document.createElement("canvas");
+        this.bctx = this.buffer.getContext("2d", { alpha:false });
+
+        this.input = new Input(canvas);
+        this.audio = new AudioManager();
+        this.fx = new FX();
+        this.effects = new EffectsManager();
+
+        this.state = "menu"; // menu | playing | lore | gameover
+        this.time = 0;
+        this.dtAcc = 0;
+
+        this.world = new World();
+        this.player = null;
+        this.daughter = null;
+
+        this.enemies = [];
+        this.bullets = [];
+        this.notes = [];
+        this.powerups = [];
+
+        this.collectedNotes = 0;
+        this.messages = []; // small HUD whispers
+
+        this.cam = {x:0, y:0};
+
+        this.basePaletteIndex = 0;
+
+        this._last = performance.now();
+        this._raf = null;
+
+        this.resize();
+        window.addEventListener("resize", () => this.resize());
+
+        this.seedWorldPickups();
+      }
+
+      resize(){
+        const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+        this.canvas.width = Math.floor(innerWidth * dpr);
+        this.canvas.height = Math.floor(innerHeight * dpr);
+
+        // choose a low-res size that fits aspect, keep ~320 wide baseline
+        const aspect = innerWidth / innerHeight;
+        this.rw = 320;
+        this.rh = Math.max(180, Math.floor(this.rw / aspect));
+        this.buffer.width = this.rw;
+        this.buffer.height = this.rh;
+
+        // important: crisp pixels
+        this.ctx.imageSmoothingEnabled = false;
+        this.bctx.imageSmoothingEnabled = false;
+      }
+
+      seedWorldPickups(){
+        this.notes.length = 0;
+        this.powerups.length = 0;
+
+        // place notes
+        const noteXs = [260, 740, 1180, 1520];
+        for(let i=0;i<noteXs.length;i++){
+          const x = noteXs[i] + randi(-20,20);
+          const y = this.world.groundY - 10;
+          this.notes.push(new NoteItem(x, y, i % LORE.length));
+        }
+
+        // occasional powerups
+        for(let i=0;i<6;i++){
+          const x = 360 + i*280 + randi(-40,40);
+          const y = this.world.groundY - 18;
+          const type = chance(0.55) ? "hp" : "sanity";
+          this.powerups.push(new PowerUp(x, y, type));
+        }
+      }
+
+      startNewRun(playerName, avatarId){
+        this.state = "playing";
+        this.time = 0;
+        this.collectedNotes = 0;
+        this.messages.length = 0;
+
+        this.world = new World();
+        this.seedWorldPickups();
+
+        this.player = new Player(60, this.world.groundY - 16, avatarId, playerName);
+        this.daughter = null;
+
+        this.enemies.length = 0;
+        this.bullets.length = 0;
+
+        this.fx.p.length = 0;
+        this.tension = new TensionManager();
+        this.effects = new EffectsManager();
+
+        // base palette depends on avatar a little
+        this.basePaletteIndex = (avatarId === 1) ? 2 : 0;
+
+        // start audio after user gesture
+        this.audio.start();
+        this.audio.setIntensity(0);
+
+        this.messages.push({t:2.2, text:"FOG. BREATH. A CLICKING SKY."});
+      }
+
+      spawnBulletFromPlayer(player){
+        // convert mouse screen->world in low-res space
+        const mx = this.input.mouse.x * this.rw;
+        const my = this.input.mouse.y * this.rh;
+
+        const pal = this.effects.currentPalette(this.basePaletteIndex);
+
+        // aim point in world coords
+        const aimX = this.cam.x + mx;
+        const aimY = this.cam.y + my;
+
+        // slight madness aim drift when sanity low
+        const sanity = player.sanity / player.sanityMax;
+        const drift = (1 - sanity) * 16;
+        const ax = aimX + rand(-drift, drift);
+        const ay = aimY + rand(-drift, drift);
+
+        const ox = player.cx + (player.facing>0 ? 6 : -6);
+        const oy = player.y + (player.crouching ? 7 : 8);
+
+        const [nx, ny] = norm(ax - ox, ay - oy);
+        const sp = 220;
+
+        const b = new Bullet(ox, oy, nx*sp, ny*sp, "player");
+        b.damage = player.damage;
+
+        this.bullets.push(b);
+
+        // tiny muzzle flash particles
+        this.fx.spark(ox + nx*3, oy + ny*3, 3);
+
+        // audio tick via thump, very subtle
+        this.audio.oneShotThump(0.12);
+
+        // recoil micro
+        player.vx -= nx * 4;
+        player.vy -= ny * 3;
+
+        // a “cold” message occasionally
+        if(chance(0.025)){
+          this.messages.push({t:1.8, text:"THE GUN REMEMBERS."});
+        }
+      }
+
+      spawnEnemyWave(){
+        // spawn 1-3 enemies just outside right edge (and sometimes above)
+        const count = randi(1, 3);
+        for(let i=0;i<count;i++){
+          const kind = chance(0.45) ? "fly" : "ground";
+          const x = this.cam.x + this.rw + randi(20, 70);
+          const y = (kind==="fly")
+            ? (this.world.groundY - randi(40, 95))
+            : (this.world.groundY - 14);
+          this.enemies.push(new Enemy(x, y, kind));
+        }
+
+        // daughter may wander in (rare, but important)
+        if(!this.daughter && chance(0.08)){
+          const x = this.cam.x + this.rw - randi(30, 70);
+          const y = this.world.groundY - 14;
+          this.daughter = new Daughter(x, y);
+          this.messages.push({t:2.2, text:"SHE ARRIVES WITHOUT SOUND."});
+          this.audio.oneShotThump(0.9);
+        }
+      }
+
+      spawnPowerUp(x,y){
+        const type = chance(0.55) ? "hp" : "sanity";
+        const p = new PowerUp(x + randi(-10,10), y - randi(8,14), type);
+        this.powerups.push(p);
+      }
+
+      showLore(noteItem){
+        this.state = "lore";
+        const loreText = buildLoreText(noteItem.textId, this.player.name, this.player.avatarId);
+        UI.setLore(loreText);
+        UI.showLore(true);
+        this.audio.setIntensity(0.15);
+      }
+
+      endGame(kind, reason){
+        this.state = "gameover";
+        UI.showLore(false);
+
+        const isBad = (kind === "bad");
+        UI.showGameOver(true, isBad, reason);
+        this.audio.setIntensity(isBad ? 0.85 : 0.55);
+      }
+
+      update(dt){
+        this.time += dt;
+
+        if(this.state !== "playing"){
+          // still animate tiny overlay noise via audio intensity decay
+          return;
+        }
+
+        this.player.update(dt, this);
+
+        // camera follow
+        const targetX = this.player.x - this.rw * 0.36;
+        this.cam.x = lerp(this.cam.x, targetX, 1 - Math.pow(0.0002, dt));
+        this.cam.x = Math.max(0, this.cam.x);
+        this.cam.y = 0;
+
+        // tension + effects + audio
+        this.tension.update(dt, this);
+        this.effects.update(dt, this);
+        this.audio.setIntensity(this.tension.heat);
+
+        // update enemies, bullets, pickups, daughter
+        for(const e of this.enemies) e.update(dt, this);
+        for(const b of this.bullets) b.update(dt, this);
+        for(const n of this.notes) n.update(dt, this);
+        for(const p of this.powerups) p.update(dt, this);
+        if(this.daughter) this.daughter.update(dt, this);
+
+        // FX
+        this.fx.update(dt, this.world);
+
+        // interactions: notes/powerups with E (and auto pickup if touching)
+        const p = this.player;
+
+        // NOTE pickup
+        for(const n of this.notes){
+          if(n.dead) continue;
+          const near = aabb(p.x,p.y,p.w,p.h, n.x-3,n.y-3,n.w+6,n.h+6);
+          if(near && (this.input.interact() || true)){
+            n.dead = true;
+            this.collectedNotes++;
+            this.showLore(n);
+            this.audio.oneShotThump(0.7);
+          }
+        }
+
+        // POWERUP pickup
+        for(const pu of this.powerups){
+          if(pu.dead) continue;
+          if(aabb(p.x,p.y,p.w,p.h, pu.x,pu.y,pu.w,pu.h)){
+            pu.dead = true;
+            if(pu.type==="hp"){
+              p.heal(26);
+              this.messages.push({t:1.8, text:"FLESH REMEMBERS HOW TO CLOSE."});
+            }else{
+              p.restoreSanity(34);
+              // dampen madness immediately
+              this.effects.controlInvert = 0;
+              this.effects.paletteSwap = 0;
+              this.effects.glitchKick = 0.25;
+              this.messages.push({t:1.8, text:"THE WORLD STOPS LAUGHING (FOR NOW)."});
+            }
+            this.audio.oneShotThump(0.6);
+          }
+        }
+
+        // bullet collisions
+        this.handleCombat();
+
+        // cleanup
+        this.enemies = this.enemies.filter(e => !e.dead);
+        this.bullets = this.bullets.filter(b => !b.dead);
+        this.notes = this.notes.filter(n => !n.dead);
+        this.powerups = this.powerups.filter(pu => !pu.dead);
+
+        // HUD whisper decay
+        for(const m of this.messages) m.t -= dt;
+        this.messages = this.messages.filter(m => m.t > 0);
+
+        // lose conditions
+        if(this.player.hp <= 0){
+          this.endGame("normal", "You collapsed into the fog. The Angels kept walking.");
+        }
+      }
+
+      handleCombat(){
+        // bullets hit enemies / daughter
+        for(const b of this.bullets){
+          if(b.dead) continue;
+
+          // daughter: instant bad ending if shot
+          if(this.daughter && aabb(b.x,b.y,b.w,b.h, this.daughter.x,this.daughter.y,this.daughter.w,this.daughter.h)){
+            b.dead = true;
+            this.fx.blood(this.daughter.cx, this.daughter.cy, 24);
+            this.endGame("bad", "Bad Ending: You shot The Daughter.\n\nThe fog congratulates you. The screen refuses to forgive.");
+            return;
+          }
+
+          // enemies
+          for(const e of this.enemies){
+            if(e.dead) continue;
+            if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
+              b.dead = true;
+              e.hit(b.damage, this);
+              break;
+            }
+          }
+        }
+      }
+
+      draw(){
+        // choose palette
+        const pal = this.effects.currentPalette(this.basePaletteIndex);
+
+        // clear low-res
+        this.bctx.imageSmoothingEnabled = false;
+        this.bctx.clearRect(0,0,this.rw,this.rh);
+
+        // world
+        this.world.draw(this.bctx, this.cam, pal);
+
+        // pickups
+        for(const n of this.notes) n.draw(this.bctx, this.cam, pal);
+        for(const pu of this.powerups) pu.draw(this.bctx, this.cam, pal);
+
+        // daughter
+        if(this.daughter) this.daughter.draw(this.bctx, this.cam, pal);
+
+        // enemies
+        for(const e of this.enemies) e.draw(this.bctx, this.cam, pal);
+
+        // bullets
+        for(const b of this.bullets) b.draw(this.bctx, this.cam, pal);
+
+        // player
+        if(this.player) this.player.draw(this.bctx, this.cam, pal);
+
+        // FX
+        this.fx.draw(this.bctx, this.cam, pal);
+
+        // UI in low-res space
+        this.drawHUD(this.bctx, pal);
+
+        // post process in low-res
+        this.effects.post(this.bctx, this, pal);
+
+        // upscale to screen
+        const cw = this.canvas.width;
+        const ch = this.canvas.height;
+        this.ctx.imageSmoothingEnabled = false;
+
+        // Fit buffer to canvas (cover)
+        // We'll letterbox to keep clean pixels:
+        const scale = Math.floor(Math.min(cw/this.rw, ch/this.rh));
+        const dw = this.rw * scale;
+        const dh = this.rh * scale;
+        const dx = ((cw - dw) / 2) | 0;
+        const dy = ((ch - dh) / 2) | 0;
+
+        this.ctx.fillStyle = "#000";
+        this.ctx.fillRect(0,0,cw,ch);
+        this.ctx.drawImage(this.buffer, 0,0,this.rw,this.rh, dx,dy,dw,dh);
+
+        // cinematic side bars? (already black)
+      }
+
+      drawHUD(ctx, pal){
+        if(!this.player) return;
+
+        const p = this.player;
+
+        // bars
+        const x = 8, y = 8, w = 110, h = 6;
+
+        // health
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(x-1,y-1,w+2,h+2);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x,y,w,h);
+        ctx.fillStyle = pal.powerHP;
+        ctx.fillRect(x,y, Math.floor(w*(p.hp/p.hpMax)), h);
+
+        // sanity
+        const y2 = y+10;
+        ctx.fillStyle = pal.outline;
+        ctx.fillRect(x-1,y2-1,w+2,h+2);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x,y2,w,h);
+        ctx.fillStyle = pal.powerSanity;
+        ctx.fillRect(x,y2, Math.floor(w*(p.sanity/p.sanityMax)), h);
+
+        // mode indicator
+        const mode = this.tension?.mode || "atmospheric";
+        ctx.fillStyle = pal.ui;
+        ctx.font = "10px ui-monospace, monospace";
+        const label = (mode==="frenetic") ? "FRENETIC MODE" : "ATMOSPHERIC MODE";
+        ctx.fillText(label, x, y2+18);
+
+        // daughter warning
+        if(this.daughter){
+          ctx.fillStyle = pal.daughterAlt;
+          ctx.fillText("PROTECT THE DAUGHTER", x, y2+30);
+        }
+
+        // whispers (bottom)
+        let yy = ctx.canvas.height - 10;
+        for(const m of this.messages.slice(-2)){
+          ctx.globalAlpha = clamp(m.t/2, 0, 1) * 0.9;
+          ctx.fillStyle = pal.uiDim;
+          ctx.fillText(m.text, 8, yy);
+          yy -= 10;
+          ctx.globalAlpha = 1;
+        }
+
+        // subtle crosshair
+        const mx = this.input.mouse.x * this.rw;
+        const my = this.input.mouse.y * this.rh;
+        ctx.globalAlpha = 0.8;
+        ctx.strokeStyle = pal.uiDim;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
+        ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
+        ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
+        ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      tick = () => {
+        const now = performance.now();
+        let dt = (now - this._last) / 1000;
+        this._last = now;
+
+        // clamp dt to avoid big jumps
+        dt = Math.min(dt, 1/20);
+
+        // handle lore close via Space
+        if(this.state === "lore"){
+          if(this.input.down("Space")){
+            this.state = "playing";
+            UI.showLore(false);
+            // prevent "stuck space" feel by clearing key quickly
+            this.input.keys.delete("Space");
+          }
+        }
+
+        // update and draw
+        this.update(dt);
+        this.draw();
+
+        this._raf = requestAnimationFrame(this.tick);
+      }
+    }
+
+    /*********************************************************************
+     * UI wiring
+     *********************************************************************/
+    const UI = {
+      menuOverlay: document.getElementById("menuOverlay"),
+      loreOverlay: document.getElementById("loreOverlay"),
+      loreText: document.getElementById("loreText"),
+      closeLoreBtn: document.getElementById("closeLoreBtn"),
+      gameOverOverlay: document.getElementById("gameOverOverlay"),
+      gameOverTitle: document.getElementById("gameOverTitle"),
+      gameOverBody: document.getElementById("gameOverBody"),
+      endingBadge: document.getElementById("endingBadge"),
+      startBtn: document.getElementById("startBtn"),
+      retryBtn: document.getElementById("retryBtn"),
+      backBtn: document.getElementById("backBtn"),
+      playerName: document.getElementById("playerName"),
+      chips: Array.from(document.querySelectorAll(".chip")),
+
+      avatarId: 0,
+
+      showMenu(v){ this.menuOverlay.style.display = v ? "grid" : "none"; },
+      showLore(v){ this.loreOverlay.style.display = v ? "grid" : "none"; },
+      setLore(t){ this.loreText.textContent = t; },
+      showGameOver(v, bad, body){
+        this.gameOverOverlay.style.display = v ? "grid" : "none";
+        if(!v) return;
+        this.gameOverTitle.textContent = bad ? "BAD ENDING" : "GAME OVER";
+        this.gameOverBody.textContent = body || "";
+        this.endingBadge.textContent = bad ? "Bad Ending" : "Ending";
+        this.endingBadge.className = "badge " + (bad ? "bad" : "good");
+      }
+    };
+
+    /*********************************************************************
+     * Boot
+     *********************************************************************/
+    const canvas = document.getElementById("game");
+    const game = new Game(canvas);
+
+    // avatar selection
+    UI.chips.forEach(ch => {
+      ch.addEventListener("click", () => {
+        UI.chips.forEach(x => x.classList.remove("sel"));
+        ch.classList.add("sel");
+        UI.avatarId = parseInt(ch.dataset.avatar, 10) || 0;
+      });
+    });
+
+    function start(){
+      const name = (UI.playerName.value || "Unnamed").trim().slice(0, 20) || "Unnamed";
+      UI.playerName.value = name;
+
+      UI.showMenu(false);
+      UI.showGameOver(false);
+
+      game.startNewRun(name, UI.avatarId);
+    }
+
+    UI.startBtn.addEventListener("click", start);
+    UI.playerName.addEventListener("keydown", (e) => {
+      if(e.key === "Enter") start();
+    });
+
+    UI.closeLoreBtn.addEventListener("click", () => {
+      if(game.state === "lore"){
+        game.state = "playing";
+        UI.showLore(false);
+      }
+    });
+
+    UI.retryBtn.addEventListener("click", () => {
+      UI.showGameOver(false);
+      game.startNewRun(game.player?.name || "Unnamed", game.player?.avatarId || 0);
+    });
+
+    UI.backBtn.addEventListener("click", () => {
+      UI.showGameOver(false);
+      UI.showLore(false);
+      game.state = "menu";
+      UI.showMenu(true);
+    });
+
+    // Pause menu stays visible; game loop always runs for ambience
+    UI.showMenu(true);
+    UI.showLore(false);
+    UI.showGameOver(false);
+
+    // Start loop
+    game.tick();
+
+    // Also allow clicking canvas to start audio early (WebAudio gesture requirements)
+    canvas.addEventListener("pointerdown", () => {
+      game.audio.start();
+    });
+
+  })();
+  </script>
+</body>
+</html>
