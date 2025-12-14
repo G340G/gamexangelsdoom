@@ -1,4 +1,8 @@
-/* ASYLUM FOG // vanilla JS, HTML5 Canvas, GitHub Pages ready */
+/* ASYLUM FOG // vanilla JS, HTML5 Canvas, GitHub Pages ready
+   - Difficulty rebalanced: i-frames, knockback, lower contact dmg, capped spawns, adaptive easing
+   - Atmosphere variation: Zones (palette/fog/noise/decor feel) throughout depth
+   - Main loop bug fixed (no double-update)
+*/
 (() => {
   "use strict";
 
@@ -6,7 +10,6 @@
    * DOM
    ***********************/
   const $ = (id) => document.getElementById(id);
-
   const UI = {
     canvas: $("c"),
     menu: $("menu"),
@@ -22,6 +25,7 @@
     sanFill: $("sanFill"),
     depthLabel: $("depthLabel"),
     modeLabel: $("modeLabel"),
+    zoneLabel: $("zoneLabel"),
     weaponLabel: $("weaponLabel"),
     hintLabel: $("hintLabel"),
 
@@ -82,26 +86,24 @@
   const rand = (a = 0, b = 1) => a + Math.random() * (b - a);
   const randi = (a, b) => (a + (Math.random() * (b - a + 1) | 0));
   const chance = (p) => Math.random() < p;
+  const hypot = (x, y) => Math.hypot(x, y);
 
   function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
-  function hypot(x, y) { return Math.hypot(x, y); }
   function norm(x, y) {
     const l = Math.hypot(x, y) || 1;
     return [x / l, y / l];
   }
 
   /***********************
-   * Input (FIXED: never inverts unless explicitly enabled)
+   * Input
    ***********************/
   const Input = {
     keys: new Set(),
     mouse: { nx: 0.5, ny: 0.5, down: false },
-    // optional confusion effect (OFF by default)
     confusionEnabled: false,
     confusionT: 0,
-    isPaused: () => SceneStack.top()?.pausesGame === true,
 
     down(code) { return this.keys.has(code); },
     consume(code) { if (this.down(code)) { this.keys.delete(code); return true; } return false; },
@@ -112,7 +114,6 @@
       return raw;
     },
     jump() { return this.down("KeyW"); },
-    crouch() { return this.down("KeyS"); },
     interact() { return this.down("KeyE"); }
   };
 
@@ -128,18 +129,16 @@
     Input.mouse.nx = clamp((e.clientX - r.left) / Math.max(1, r.width), 0, 1);
     Input.mouse.ny = clamp((e.clientY - r.top) / Math.max(1, r.height), 0, 1);
   });
-
   canvas.addEventListener("mousedown", () => Input.mouse.down = true);
   window.addEventListener("mouseup", () => Input.mouse.down = false);
 
   /***********************
-   * Palette + Atmosphere
+   * Palette
    ***********************/
   const PAL = {
     bg: "#050505",
     floor: "#09090d",
     wall: "#0f0f16",
-    outline: "#2a2a3a",
     fog: "#0b0b12",
     light: "#eaeaf2",
     accent: "#7d3cff",
@@ -147,20 +146,14 @@
     sick: "#a2ffcf",
     rust: "#5a0b17",
     paper: "#f1f1ff",
-    skin: "#c9c9d6",
   };
 
   /***********************
-   * Assets + Animated sprites
-   * - Supports sprite sheets: frames in a row
+   * Assets + Sprites
    ***********************/
   class Assets {
     constructor() {
-      this.images = new Map();     // key -> Image or Canvas
-      this.loaded = 0;
-      this.failed = 0;
-
-      // optional repo assets (no external URLs)
+      this.images = new Map();
       this.manifest = {
         player: "assets/player.png",
         angel: "assets/angel.png",
@@ -179,14 +172,14 @@
 
     async tryLoadManifest() {
       const keys = Object.keys(this.manifest);
-      await Promise.all(keys.map(k => this._loadOne(k, this.manifest[k], true)));
+      await Promise.all(keys.map(k => this._loadOne(k, this.manifest[k])));
     }
 
-    _loadOne(key, url, silent) {
+    _loadOne(key, url) {
       return new Promise((resolve) => {
         const img = new Image();
-        img.onload = () => { this.images.set(key, img); this.loaded++; resolve(true); };
-        img.onerror = () => { this.failed++; resolve(false); };
+        img.onload = () => { this.images.set(key, img); resolve(true); };
+        img.onerror = () => resolve(false);
         img.src = url;
       });
     }
@@ -231,7 +224,6 @@
 
   const assets = new Assets();
 
-  // Animated sprite helper (sprite sheet: frames in a single row)
   class Sprite {
     constructor(img, frameW, frameH, frames, fps = 10) {
       this.img = img;
@@ -241,6 +233,7 @@
       this.fps = fps;
     }
     draw(ctx, x, y, t, flip = false, scale = 1, alpha = 1, frameOverride = null) {
+      if (!this.img) return;
       const f = frameOverride !== null ? frameOverride : (Math.floor(t * this.fps) % this.frames);
       const sx = f * this.fw;
 
@@ -254,8 +247,7 @@
   }
 
   /***********************
-   * Procedural sprite sheets (professional-looking placeholders)
-   * When no PNG exists, we generate an animated sheet on a canvas.
+   * Procedural sprite sheets (fallback)
    ***********************/
   function makeSheet(key, fw, fh, frames, drawFrame) {
     const c = document.createElement("canvas");
@@ -263,7 +255,6 @@
     c.height = fh;
     const x = c.getContext("2d");
     x.imageSmoothingEnabled = false;
-
     for (let i = 0; i < frames; i++) {
       x.save();
       x.translate(i * fw, 0);
@@ -277,165 +268,102 @@
     ctx.fillStyle = color;
     const n = Math.floor(w * h * density);
     for (let i = 0; i < n; i++) {
-      const x = (Math.random() * w) | 0;
-      const y = (Math.random() * h) | 0;
-      ctx.fillRect(x, y, 1, 1);
+      ctx.fillRect((Math.random() * w) | 0, (Math.random() * h) | 0, 1, 1);
     }
   }
 
   function buildProceduralSprites() {
-    // Player: 6 frames walk cycle
     makeSheet("player", 24, 36, 6, (x, i) => {
       x.clearRect(0,0,24,36);
-      // silhouette base
-      x.fillStyle = "#0a0a0f";
-      x.fillRect(6, 8, 12, 22);
-      // coat
-      x.fillStyle = PAL.light;
-      x.fillRect(7, 10, 10, 18);
-      // head
-      x.fillStyle = "#15151c";
-      x.fillRect(8, 6, 8, 6);
-      // eye glow
-      x.fillStyle = PAL.accent;
-      x.fillRect(14, 8, 2, 1);
+      x.fillStyle = "#0a0a0f"; x.fillRect(6, 8, 12, 22);
+      x.fillStyle = PAL.light; x.fillRect(7, 10, 10, 18);
+      x.fillStyle = "#15151c"; x.fillRect(8, 6, 8, 6);
+      x.fillStyle = PAL.accent; x.fillRect(14, 8, 2, 1);
 
-      // legs animation
       const step = Math.sin((i/6)*Math.PI*2);
       x.fillStyle = "#111118";
       x.fillRect(8 + (step>0?1:0), 28, 3, 6);
       x.fillRect(13 + (step<0?1:0), 28, 3, 6);
 
-      // rifle
       x.fillStyle = "#5f5f6e";
       x.fillRect(16, 16, 7, 2);
-      x.fillRect(20, 15, 3, 1);
-
-      // grime dithering
       ditherDots(x, 24, 36, 0.035, "#0c0c12");
       ditherDots(x, 24, 36, 0.02, "#ffffff10");
     });
 
-    // Angel: 6 frames (wing flutter)
     makeSheet("angel", 28, 28, 6, (x, i) => {
       x.clearRect(0,0,28,28);
       const flap = Math.sin((i/6)*Math.PI*2);
-      // wings
       x.fillStyle = PAL.danger;
       x.fillRect(2, 10, 8, 4 + ((flap*3)|0));
       x.fillRect(18, 10, 8, 4 + ((-flap*3)|0));
-      // body
       x.fillStyle = "#2a0b10";
       x.fillRect(10, 7, 8, 14);
-      // slit eye
       x.fillStyle = PAL.paper;
       x.fillRect(13, 12, 2, 1);
-      // spikes
-      x.strokeStyle = PAL.danger;
-      x.beginPath();
-      x.moveTo(14, 4); x.lineTo(14, 7);
-      x.stroke();
-
       ditherDots(x, 28, 28, 0.06, "#00000022");
     });
 
-    // Nurse: ambiguous NPC
     makeSheet("nurse", 24, 34, 6, (x,i)=> {
       x.clearRect(0,0,24,34);
       const sway = Math.sin((i/6)*Math.PI*2);
-      x.fillStyle = "#0c0c12";
-      x.fillRect(7, 7, 10, 24);
-      x.fillStyle = "#dcdcea";
-      x.fillRect(8, 9, 8, 18);
-      // mask / bandage
-      x.fillStyle = "#f1f1ff";
-      x.fillRect(9, 7, 6, 4);
-      x.fillStyle = PAL.accent;
-      x.fillRect(14, 9, 1, 1);
-      // syringe silhouette
-      x.fillStyle = "#6e6e80";
-      x.fillRect(3, 14 + ((sway*1)|0), 6, 2);
+      x.fillStyle = "#0c0c12"; x.fillRect(7, 7, 10, 24);
+      x.fillStyle = "#dcdcea"; x.fillRect(8, 9, 8, 18);
+      x.fillStyle = "#f1f1ff"; x.fillRect(9, 7, 6, 4);
+      x.fillStyle = PAL.accent; x.fillRect(14, 9, 1, 1);
+      x.fillStyle = "#6e6e80"; x.fillRect(3, 14 + ((sway*1)|0), 6, 2);
       ditherDots(x, 24, 34, 0.045, "#0b0b10");
     });
 
-    // Patient: deranged wanderer
     makeSheet("patient", 24, 34, 6, (x,i)=> {
       x.clearRect(0,0,24,34);
-      const twitch = (Math.random()*2-1)*0.3; // tiny static while generating
-      x.fillStyle = "#09090f";
-      x.fillRect(7, 7, 10, 24);
-      x.fillStyle = "#b8b8c6";
-      x.fillRect(8, 10, 8, 14);
-      x.fillStyle = "#000";
-      x.fillRect(9, 8, 6, 3);
-      x.fillStyle = PAL.rust;
-      x.fillRect(12, 16, 2, 2);
-      // dragging limb
+      x.fillStyle = "#09090f"; x.fillRect(7, 7, 10, 24);
+      x.fillStyle = "#b8b8c6"; x.fillRect(8, 10, 8, 14);
+      x.fillStyle = "#000"; x.fillRect(9, 8, 6, 3);
+      x.fillStyle = PAL.rust; x.fillRect(12, 16, 2, 2);
       const step = Math.sin((i/6)*Math.PI*2);
       x.fillStyle = "#101018";
       x.fillRect(8 + (step>0?1:0), 28, 3, 6);
-      x.fillRect(13 + (step<0?1:0), 3, 1, 1); // micro glitch
       ditherDots(x, 24, 34, 0.05, "#00000022");
     });
 
-    // Child (Patient 07)
     makeSheet("child", 22, 30, 4, (x,i)=> {
       x.clearRect(0,0,22,30);
       const bob = Math.sin((i/4)*Math.PI*2);
       x.fillStyle = PAL.sick;
       x.fillRect(9, 6 + ((bob*1)|0), 4, 4);
       x.beginPath();
-      x.moveTo(11, 10);
-      x.lineTo(18, 26);
-      x.lineTo(4, 26);
-      x.closePath();
-      x.fill();
-      // eyes
+      x.moveTo(11, 10); x.lineTo(18, 26); x.lineTo(4, 26);
+      x.closePath(); x.fill();
       x.fillStyle = "#003a22";
-      x.fillRect(9, 9, 1, 1);
-      x.fillRect(12, 9, 1, 1);
+      x.fillRect(9, 9, 1, 1); x.fillRect(12, 9, 1, 1);
       ditherDots(x, 22, 30, 0.03, "#ffffff10");
     });
 
-    // Chest
     makeSheet("chest", 26, 18, 4, (x,i)=> {
       x.clearRect(0,0,26,18);
       const pulse = Math.sin((i/4)*Math.PI*2);
-      x.fillStyle = "#0b0b11";
-      x.fillRect(3, 6, 20, 10);
-      x.fillStyle = "#181820";
-      x.fillRect(4, 7, 18, 4);
-      x.fillStyle = "#ffb24a";
-      x.fillRect(6, 11, 14, 2);
-      // latch
-      x.fillStyle = "#2a2a3a";
-      x.fillRect(12, 10, 2, 3);
-      // shimmer
+      x.fillStyle = "#0b0b11"; x.fillRect(3, 6, 20, 10);
+      x.fillStyle = "#181820"; x.fillRect(4, 7, 18, 4);
+      x.fillStyle = "#ffb24a"; x.fillRect(6, 11, 14, 2);
+      x.fillStyle = "#2a2a3a"; x.fillRect(12, 10, 2, 3);
       x.globalAlpha = 0.3 + pulse*0.2;
-      x.fillStyle = "#ffb24a";
-      x.fillRect(18, 6, 2, 2);
+      x.fillStyle = "#ffb24a"; x.fillRect(18, 6, 2, 2);
       x.globalAlpha = 1;
       ditherDots(x, 26, 18, 0.06, "#00000022");
     });
 
-    // Note
     makeSheet("note", 14, 12, 2, (x,i)=> {
       x.clearRect(0,0,14,12);
-      x.fillStyle = PAL.paper;
-      x.fillRect(1,1,12,10);
-      x.fillStyle = "#2a2a3a";
-      x.fillRect(10,2,2,2);
+      x.fillStyle = PAL.paper; x.fillRect(1,1,12,10);
+      x.fillStyle = "#2a2a3a"; x.fillRect(10,2,2,2);
       ditherDots(x, 14, 12, 0.08, "#00000014");
     });
 
-    // Bosses placeholders
     makeSheet("boss1", 64, 64, 6, (x,i)=> {
       x.clearRect(0,0,64,64);
       const r = 10 + Math.sin((i/6)*Math.PI*2)*2;
-      // core
-      x.fillStyle = "#0d0d16";
-      x.fillRect(16, 12, 32, 44);
-      // halo blades
+      x.fillStyle = "#0d0d16"; x.fillRect(16, 12, 32, 44);
       x.strokeStyle = PAL.accent;
       x.beginPath();
       for(let k=0;k<10;k++){
@@ -445,25 +373,17 @@
         x.lineTo(cx+Math.cos(a)*(14+r), cy+Math.sin(a)*10);
       }
       x.stroke();
-      x.fillStyle = PAL.danger;
-      x.fillRect(30, 28, 4, 10);
+      x.fillStyle = PAL.danger; x.fillRect(30, 28, 4, 10);
       ditherDots(x, 64, 64, 0.06, "#00000022");
     });
 
     makeSheet("boss2", 72, 56, 6, (x,i)=> {
       x.clearRect(0,0,72,56);
       const wob = Math.sin((i/6)*Math.PI*2);
-      // chassis
-      x.fillStyle = "#0b0b12";
-      x.fillRect(14, 10, 44, 30);
-      // core
-      x.fillStyle = PAL.accent;
-      x.fillRect(34, 22, 4, 4);
-      // mouths/speakers
+      x.fillStyle = "#0b0b12"; x.fillRect(14, 10, 44, 30);
+      x.fillStyle = PAL.accent; x.fillRect(34, 22, 4, 4);
       x.fillStyle = PAL.danger;
-      x.fillRect(18, 16, 6, 6);
-      x.fillRect(48, 16, 6, 6);
-      // dangling “wires”
+      x.fillRect(18, 16, 6, 6); x.fillRect(48, 16, 6, 6);
       x.strokeStyle = "#3a3a55";
       x.beginPath();
       x.moveTo(36, 40); x.lineTo(28, 52 + ((wob*2)|0));
@@ -472,7 +392,6 @@
       ditherDots(x, 72, 56, 0.07, "#00000022");
     });
   }
-
   buildProceduralSprites();
 
   function updateAssetUI() {
@@ -488,16 +407,13 @@
   updateAssetUI();
 
   /***********************
-   * Procedural Audio (more abrasive)
+   * Procedural Audio
    ***********************/
   const AudioSys = {
     ctx: null,
     master: null,
     started: false,
-    // nodes
-    droneOsc: null,
     droneGain: null,
-    noiseSrc: null,
     noiseGain: null,
     filter: null,
     crunch: null,
@@ -513,47 +429,37 @@
       this.master.gain.value = 0.22;
       this.master.connect(this.ctx.destination);
 
-      // master filter (moves with intensity)
       this.filter = this.ctx.createBiquadFilter();
       this.filter.type = "lowpass";
       this.filter.frequency.value = 380;
       this.filter.Q.value = 0.9;
       this.filter.connect(this.master);
 
-      // “crunch” waveshaper (abrasive)
       this.crunch = this.ctx.createWaveShaper();
       this.crunch.curve = this._makeDistortionCurve(220);
       this.crunch.oversample = "4x";
       this.crunch.connect(this.filter);
 
-      // Drone (two oscillators, slight detune)
+      // Drone
       const o1 = this.ctx.createOscillator();
       const o2 = this.ctx.createOscillator();
-      o1.type = "sawtooth";
-      o2.type = "triangle";
-      o1.frequency.value = 44;
-      o2.frequency.value = 56;
+      o1.type = "sawtooth"; o2.type = "triangle";
+      o1.frequency.value = 44; o2.frequency.value = 56;
       o2.detune.value = -17;
 
       this.droneGain = this.ctx.createGain();
       this.droneGain.gain.value = 0.09;
-
       o1.connect(this.droneGain);
       o2.connect(this.droneGain);
       this.droneGain.connect(this.crunch);
 
-      // Noise buffer
+      // Noise
       const nlen = 2 * this.ctx.sampleRate;
       const bufN = this.ctx.createBuffer(1, nlen, this.ctx.sampleRate);
       const data = bufN.getChannelData(0);
-      for (let i = 0; i < nlen; i++) {
-        const white = (Math.random() * 2 - 1);
-        // slightly “gritty” colored noise
-        data[i] = white * (0.75 + 0.25 * Math.random());
-      }
+      for (let i = 0; i < nlen; i++) data[i] = (Math.random() * 2 - 1) * (0.75 + 0.25 * Math.random());
       const noise = this.ctx.createBufferSource();
-      noise.buffer = bufN;
-      noise.loop = true;
+      noise.buffer = bufN; noise.loop = true;
 
       this.noiseGain = this.ctx.createGain();
       this.noiseGain.gain.value = 0.02;
@@ -561,12 +467,11 @@
       const hp = this.ctx.createBiquadFilter();
       hp.type = "highpass";
       hp.frequency.value = 160;
-
       noise.connect(hp);
       hp.connect(this.noiseGain);
       this.noiseGain.connect(this.crunch);
 
-      // Siren (only during frenetic/boss)
+      // Siren
       this.sirenOsc = this.ctx.createOscillator();
       this.sirenOsc.type = "sine";
       this.sirenOsc.frequency.value = 480;
@@ -575,11 +480,7 @@
       this.sirenOsc.connect(this.sirenGain);
       this.sirenGain.connect(this.filter);
 
-      o1.start();
-      o2.start();
-      noise.start();
-      this.sirenOsc.start();
-
+      o1.start(); o2.start(); noise.start(); this.sirenOsc.start();
       this.started = true;
     },
 
@@ -596,12 +497,10 @@
       const t = this.ctx.currentTime;
       const i = clamp(v, 0, 1);
 
-      // more intensity = more noise + brighter filter
       this.filter.frequency.setTargetAtTime(260 + i * 2200, t, 0.12);
       this.noiseGain.gain.setTargetAtTime(0.01 + i * (this.hardMode ? 0.22 : 0.14), t, 0.12);
       this.droneGain.gain.setTargetAtTime(0.06 + i * 0.12, t, 0.12);
 
-      // siren: only if frenetic/boss and hard mode toggle
       const sirenOn = (mode === "frenetic" || mode === "boss");
       const sirenTarget = (this.hardMode && sirenOn) ? (0.02 + i * 0.06) : 0.0001;
       this.sirenGain.gain.setTargetAtTime(sirenTarget, t, 0.12);
@@ -619,21 +518,20 @@
       const g = this.ctx.createGain();
       o.connect(g);
       g.connect(this.filter);
-
       g.gain.value = 0.0001;
 
       if (kind === "shoot") {
         o.type = "square";
         o.frequency.setValueAtTime(180, t);
         o.frequency.exponentialRampToValueAtTime(60, t + 0.09);
-        g.gain.setValueAtTime(0.12 * amount, t);
+        g.gain.setValueAtTime(0.10 * amount, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
         o.start(t); o.stop(t + 0.11);
       } else if (kind === "hit") {
         o.type = "sawtooth";
         o.frequency.setValueAtTime(110, t);
         o.frequency.exponentialRampToValueAtTime(14, t + 0.22);
-        g.gain.setValueAtTime(0.18 * amount, t);
+        g.gain.setValueAtTime(0.16 * amount, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
         o.start(t); o.stop(t + 0.26);
       } else if (kind === "thump") {
@@ -647,14 +545,13 @@
         o.type = "triangle";
         o.frequency.setValueAtTime(90, t);
         o.frequency.exponentialRampToValueAtTime(22, t + 0.35);
-        g.gain.setValueAtTime(0.24 * amount, t);
+        g.gain.setValueAtTime(0.22 * amount, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
         o.start(t); o.stop(t + 0.48);
       }
     },
 
     _makeDistortionCurve(amount) {
-      // standard waveshaper curve
       const n = 44100;
       const curve = new Float32Array(n);
       const k = typeof amount === "number" ? amount : 50;
@@ -678,6 +575,43 @@
   };
 
   /***********************
+   * Atmosphere Zones
+   ***********************/
+  class AtmosphereManager {
+    constructor(){
+      this.zoneIndex = 0;
+      this.transitionT = 0;
+      this.zones = [
+        { depth:   0, name:"INTAKE",   tint:"#2a2a33", fog:1.05, noise:1.00, whisper:"The intake corridor smells like wet paper." },
+        { depth: 180, name:"WARD A",   tint:"#1c2430", fog:1.20, noise:1.10, whisper:"Beds behind walls. Sheets move without wind." },
+        { depth: 420, name:"SURGERY",  tint:"#2b1020", fog:1.12, noise:1.25, whisper:"The lights are too clean. That’s how you know it’s wrong." },
+        { depth: 700, name:"BASEMENT", tint:"#0b1d16", fog:1.35, noise:1.35, whisper:"Water drips in patterns that resemble names." },
+        { depth: 980, name:"CHAPEL",   tint:"#2a1b0a", fog:1.10, noise:1.45, whisper:"Something here wants witness, not worship." },
+      ];
+      this.zone = this.zones[0];
+    }
+
+    update(dt, g){
+      const d = Math.floor(g.player.x / 10);
+      let idx = this.zoneIndex;
+      while (idx+1 < this.zones.length && d >= this.zones[idx+1].depth) idx++;
+      if (idx !== this.zoneIndex) {
+        this.zoneIndex = idx;
+        this.zone = this.zones[idx];
+        this.transitionT = 2.2;
+        g.whisper(`[ZONE: ${this.zone.name}] ${this.zone.whisper}`, 2.8);
+        AudioSys.ping("thump", 0.8);
+      }
+      this.transitionT = Math.max(0, this.transitionT - dt);
+    }
+
+    get fogMult(){ return this.zone.fog; }
+    get noiseMult(){ return this.zone.noise; }
+    get tint(){ return this.zone.tint; }
+    get name(){ return this.zone.name; }
+  }
+
+  /***********************
    * Particles
    ***********************/
   class Particle {
@@ -686,7 +620,7 @@
       this.vx = rand(-90, 90);
       this.vy = rand(-160, 40);
       this.life = rand(0.18, 0.9);
-      this.kind = kind; // blood|ash|spark
+      this.kind = kind;
       this.s = rand(1, 3);
     }
     update(dt, g) {
@@ -711,17 +645,16 @@
   }
 
   /***********************
-   * World: asylum corridor chunks
+   * World
    ***********************/
   class World {
     constructor() {
       this.gravity = 720;
       this.groundY = 170;
       this.cam = { x: 0, y: 0 };
-      this.walls = [];     // obstacles (pillars, beds, carts)
-      this.decor = [];     // background silhouettes
+      this.walls = [];
+      this.decor = [];
       this.thresholdX = 1100;
-      this.length = 6000;
       this.reset();
     }
 
@@ -730,7 +663,6 @@
       this.walls.length = 0;
       this.decor.length = 0;
 
-      // corridor props
       let x = 280;
       for (let i = 0; i < 260; i++) {
         if (chance(0.38)) {
@@ -747,16 +679,13 @@
 
     collide(body) {
       body.grounded = false;
-
       if (body.y + body.h >= this.groundY) {
         body.y = this.groundY - body.h;
         body.vy = 0;
         body.grounded = true;
       }
-
       for (const o of this.walls) {
         if (!aabb(body.x, body.y, body.w, body.h, o.x, o.y, o.w, o.h)) continue;
-
         const prevY = body.y - body.vy * (1/60);
         if (prevY + body.h <= o.y + 2) {
           body.y = o.y - body.h;
@@ -770,39 +699,34 @@
       }
     }
 
-    draw(ctx, t) {
-      // background
+    draw(ctx, t, atmo) {
       ctx.fillStyle = PAL.bg;
       ctx.fillRect(0, 0, RW, RH);
 
-      // far decor parallax
+      // parallax decor
       for (const d of this.decor) {
         const sx = (d.x - this.cam.x * 0.5) | 0;
         if (sx < -120 || sx > RW + 120) continue;
         this.drawDecor(ctx, d, sx, t);
       }
 
-      // corridor "ceiling" / wall tone
       ctx.globalAlpha = 0.65;
       ctx.fillStyle = PAL.wall;
       ctx.fillRect(0, 0, RW, this.groundY - 80);
       ctx.globalAlpha = 1;
 
-      // floor
       ctx.fillStyle = PAL.floor;
       ctx.fillRect(0, this.groundY, RW, RH - this.groundY);
 
-      // props / obstacles
+      // obstacles
       for (const o of this.walls) {
         const sx = (o.x - this.cam.x) | 0;
         if (sx + o.w < -60 || sx > RW + 60) continue;
         ctx.fillStyle = "#12121a";
         ctx.fillRect(sx, o.y, o.w, o.h);
-
         ctx.strokeStyle = "#0b0b10";
         ctx.strokeRect(sx + 0.5, o.y + 0.5, o.w - 1, o.h - 1);
 
-        // detail: carts/pillars
         if (o.type === "cart") {
           ctx.fillStyle = "#0a0a10";
           ctx.fillRect(sx + 4, o.y + 4, o.w - 8, 3);
@@ -812,7 +736,7 @@
         }
       }
 
-      // threshold glyph (wakes the asylum)
+      // threshold glyph
       const tx = (this.thresholdX - this.cam.x) | 0;
       if (tx > -40 && tx < RW + 40) {
         ctx.globalAlpha = 0.8;
@@ -827,7 +751,43 @@
         ctx.globalAlpha = 1;
       }
 
-      // floating fog bands
+      // zone tint wash
+      if (atmo) {
+        ctx.globalAlpha = 0.08 + (atmo.transitionT > 0 ? 0.06 : 0);
+        ctx.fillStyle = atmo.tint;
+        ctx.fillRect(0, 0, RW, RH);
+        ctx.globalAlpha = 1;
+
+        // zone-specific micro-details
+        if (atmo.name === "SURGERY") {
+          const flick = 0.05 + 0.05 * Math.sin(t * 9);
+          ctx.globalAlpha = flick;
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, RW, 14);
+          ctx.globalAlpha = 1;
+        } else if (atmo.name === "BASEMENT") {
+          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = "#0a0f0c";
+          for (let i=0;i<10;i++){
+            const x = (Math.sin(t*0.7+i)*0.5+0.5)*RW;
+            ctx.fillRect(x|0, 0, 1, RH);
+          }
+          ctx.globalAlpha = 1;
+        } else if (atmo.name === "CHAPEL") {
+          ctx.globalAlpha = 0.09;
+          ctx.strokeStyle = "#111";
+          for (let i=0;i<4;i++){
+            const x = 60 + i*80;
+            ctx.beginPath();
+            ctx.moveTo(x, 10); ctx.lineTo(x, 90);
+            ctx.moveTo(x-8, 40); ctx.lineTo(x+8, 40);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // fog bands
       ctx.globalAlpha = 0.24;
       ctx.fillStyle = PAL.fog;
       for (let i = 0; i < 8; i++) {
@@ -839,8 +799,6 @@
 
     drawDecor(ctx, d, sx, t) {
       const y = this.groundY;
-      ctx.lineWidth = 1;
-
       if (d.type === "bars") {
         ctx.globalAlpha = 0.55;
         ctx.strokeStyle = "#0b0b10";
@@ -853,7 +811,6 @@
         }
         ctx.globalAlpha = 1;
       } else {
-        // lamp: flicker
         const flick = 0.5 + 0.5 * Math.sin(t * 6 + sx * 0.02);
         ctx.globalAlpha = 0.4;
         ctx.fillStyle = "#0b0b10";
@@ -923,55 +880,53 @@
       this.name = name;
       this.avi = avi|0;
 
-      this.hpMax=100; this.hp=100;
-      this.sanMax=100; this.san=100;
+      this.hpMax=110; this.hp=110;
+      this.sanMax=110; this.san=110;
 
-      if (this.avi===1){ this.sanMax=140; this.san=140; }
-      if (this.avi===2){ this.hpMax=160; this.hp=160; }
+      if (this.avi===1){ this.sanMax=150; this.san=150; }
+      if (this.avi===2){ this.hpMax=180; this.hp=180; }
 
       this.facing=1;
       this.cool=0;
       this.hurtT=0;
 
+      // NEW: survivability
+      this.invulnT = 0;
+      this.kbVx = 0;
+
       this.weaponIndex = 0;
       this.weapons = this._buildWeapons();
       this.weapon = this.weapons[this.weaponIndex];
 
-      this.lantern=170;
+      this.lantern=180;
       this.killCount=0;
 
-      this.trust = 0;      // influences ambiguous NPCs
-      this.morality = 0;   // - = cruel, + = compassionate
+      this.trust = 0;
+      this.morality = 0;
 
-      this.status = {
-        jamT: 0,
-        shiverT: 0,
-      };
-
-      // animation time
+      this.status = { jamT: 0, shiverT: 0 };
       this.animT = 0;
     }
 
     _buildWeapons() {
       if (this.avi===0) {
         return [
-          {name:"RIFLE", rate:0.11, bullets:1, spread:0.02, pierce:0, dmg:10},
-          {name:"CUTTER", rate:0.23, bullets:1, spread:0.00, pierce:0, dmg:18, melee:true},
-          {name:"LANTERN-BOLT", rate:0.18, bullets:1, spread:0.04, pierce:1, dmg:8, sanityCost:1.2},
+          {name:"RIFLE", rate:0.11, bullets:1, spread:0.02, pierce:0, dmg:12},
+          {name:"CUTTER", rate:0.23, bullets:1, spread:0.00, pierce:0, dmg:20, melee:true},
+          {name:"LANTERN-BOLT", rate:0.18, bullets:1, spread:0.04, pierce:1, dmg:9, sanityCost:1.0},
         ];
       }
       if (this.avi===1) {
         return [
-          {name:"NEEDLE", rate:0.15, bullets:1, spread:0.01, pierce:2, dmg:8},
-          {name:"SIGIL SHARD", rate:0.20, bullets:2, spread:0.12, pierce:0, dmg:6, sanityCost:0.8},
+          {name:"NEEDLE", rate:0.15, bullets:1, spread:0.01, pierce:2, dmg:9},
+          {name:"SIGIL SHARD", rate:0.20, bullets:2, spread:0.12, pierce:0, dmg:7, sanityCost:0.7},
           {name:"SILENCE", rate:0.55, bullets:1, spread:0.00, pierce:0, dmg:1, special:"stun"},
         ];
       }
-      // heavy
       return [
-        {name:"SCATTER", rate:0.26, bullets:5, spread:0.20, pierce:0, dmg:6},
-        {name:"HAMMER", rate:0.40, bullets:1, spread:0.00, pierce:0, dmg:26, melee:true},
-        {name:"BOLT-CAGE", rate:0.22, bullets:1, spread:0.06, pierce:0, dmg:11},
+        {name:"SCATTER", rate:0.26, bullets:5, spread:0.20, pierce:0, dmg:7},
+        {name:"HAMMER", rate:0.40, bullets:1, spread:0.00, pierce:0, dmg:28, melee:true},
+        {name:"BOLT-CAGE", rate:0.22, bullets:1, spread:0.06, pierce:0, dmg:12},
       ];
     }
 
@@ -980,10 +935,18 @@
       this.weapon = this.weapons[this.weaponIndex];
     }
 
-    hurt(dmg){
+    hurt(dmg, fromX = null){
+      if (this.invulnT > 0) return;
+      this.invulnT = 0.55; // i-frames
       this.hp = clamp(this.hp - dmg, 0, this.hpMax);
-      this.san = clamp(this.san - dmg*0.35, 0, this.sanMax);
+      this.san = clamp(this.san - dmg*0.20, 0, this.sanMax); // less sanity bleed
       this.hurtT = 0.22;
+
+      if (fromX !== null) {
+        const dir = (this.cx < fromX) ? -1 : 1;
+        this.kbVx = dir * 240;
+        this.vy = Math.min(this.vy, -120);
+      }
     }
 
     heal(a){ this.hp = clamp(this.hp + a, 0, this.hpMax); }
@@ -996,14 +959,15 @@
       this.status.jamT = Math.max(0, this.status.jamT - dt);
       this.status.shiverT = Math.max(0, this.status.shiverT - dt);
 
-      // weapon hotkeys
+      this.invulnT = Math.max(0, this.invulnT - dt);
+      this.kbVx = lerp(this.kbVx, 0, 1 - Math.pow(0.001, dt));
+
       if (Input.consume("Digit1")) this.switchWeapon(0);
       if (Input.consume("Digit2")) this.switchWeapon(1);
       if (Input.consume("Digit3")) this.switchWeapon(2);
 
-      // movement
       const dir = Input.axisX();
-      this.vx = dir * 190;
+      this.vx = dir * 190 + this.kbVx;
       if (dir !== 0) this.facing = dir > 0 ? 1 : -1;
 
       if (Input.jump() && this.grounded) {
@@ -1012,32 +976,29 @@
         AudioSys.ping("thump", 0.6);
       }
 
-      // physics
       this.vy += g.world.gravity * dt;
       this.x += this.vx * dt;
       this.y += this.vy * dt;
       g.world.collide(this);
 
-      // keep left bound
       if (this.x < g.world.cam.x) this.x = g.world.cam.x;
 
-      // sanity / lantern
-      const stress = (g.tension.mode === "frenetic" ? 1.0 : 0.25) + (g.boss ? 0.7 : 0);
-      this.san = clamp(this.san - dt * (0.70 + stress*0.9), 0, this.sanMax);
-      this.lantern = 65 + (this.san / this.sanMax) * 240;
+      // sanity decay softened, also calmer in ATMOSPHERE zones
+      const modeMul = (g.tension.mode === "frenetic") ? 1.0 : (g.tension.mode === "boss" ? 1.2 : 0.55);
+      this.san = clamp(this.san - dt * (0.55 * modeMul), 0, this.sanMax);
 
-      // aim and shoot
+      this.lantern = 70 + (this.san / this.sanMax) * 250;
+
       const mx = Input.mouse.nx * RW + g.world.cam.x;
       const my = Input.mouse.ny * RH;
 
-      const drift = (1 - this.san / this.sanMax) * 16 + (this.status.shiverT>0 ? 10 : 0);
+      const drift = (1 - this.san / this.sanMax) * 14 + (this.status.shiverT>0 ? 10 : 0);
       const ax = mx + rand(-drift, drift);
       const ay = my + rand(-drift, drift);
 
       if (Input.mouse.down && this.cool <= 0) {
         const jamMul = (this.status.jamT > 0) ? 1.8 : 1.0;
         this.cool = this.weapon.rate * jamMul;
-
         g.shoot(this, ax, ay);
       }
     }
@@ -1053,12 +1014,11 @@
       const moving = Math.abs(this.vx) > 5;
       const frame = moving ? null : 0;
 
-      // subtle “film grain” on player
       sprite.draw(ctx, sx-4, sy-4, this.animT, this.facing < 0, 1, 1, frame);
 
-      // hurt flash
-      if (this.hurtT > 0) {
-        ctx.globalAlpha = 0.18;
+      // invuln shimmer
+      if (this.invulnT > 0) {
+        ctx.globalAlpha = 0.14;
         ctx.fillStyle = "#fff";
         ctx.fillRect(sx-2, sy-2, 20, 34);
         ctx.globalAlpha = 1;
@@ -1070,8 +1030,11 @@
     constructor(x,y, type="fly") {
       super(x,y, 18, 18);
       this.type = type;
-      this.hp = type==="fly" ? 22 : 40;
-      this.touch = type==="fly" ? 10 : 14;
+
+      // REBALANCED
+      this.hp = type==="fly" ? 18 : 34;
+      this.touch = type==="fly" ? 6 : 9;
+
       this.cool = rand(0.2, 0.9);
       this.animT = rand(0, 10);
       this.trait = chance(0.5) ? "stare" : "mimic";
@@ -1087,16 +1050,15 @@
       const dy = p.cy - this.cy;
 
       if (this.type === "fly") {
-        // flyer movement with occasional “stare freeze”
         if (this.trait==="stare") {
           this.stareT -= dt;
-          if (this.stareT <= 0 && chance(0.012)) this.stareT = rand(0.6, 1.2);
+          if (this.stareT <= 0 && chance(0.010)) this.stareT = rand(0.5, 1.0);
         }
         if (this.stareT > 0) {
           this.vx *= 0.90; this.vy *= 0.90;
         } else {
           const [nx, ny] = norm(dx, dy + Math.sin(g.time*2 + this.x*0.01)*10);
-          const sp = 95 + g.tension.heat*40;
+          const sp = 85 + g.tension.heat*35;
           this.vx = nx * sp;
           this.vy = ny * sp;
         }
@@ -1104,26 +1066,25 @@
         this.y += this.vy * dt;
         this.y = Math.min(this.y, g.world.groundY - 40);
       } else {
-        // walker
         const dir = dx>0?1:-1;
-        this.vx = dir * (80 + g.tension.heat*55);
+        this.vx = dir * (70 + g.tension.heat*45);
         this.vy += g.world.gravity * dt;
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         g.world.collide(this);
 
-        if (this.grounded && chance(0.02) && this.cool<=0) {
-          this.vy = -rand(260, 360);
-          this.cool = rand(0.6, 1.1);
+        if (this.grounded && chance(0.018) && this.cool<=0) {
+          this.vy = -rand(240, 330);
+          this.cool = rand(0.7, 1.2);
         }
       }
 
-      // contact
+      // contact (with cooldown + player i-frames)
       if (aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h) && this.cool<=0) {
-        p.hurt(this.touch);
-        this.cool = 0.85;
-        g.fx(p.cx,p.cy,"blood",12);
-        AudioSys.ping("hit", 0.9);
+        p.hurt(this.touch, this.cx);
+        this.cool = 0.95;
+        g.fx(p.cx,p.cy,"blood",10);
+        AudioSys.ping("hit", 0.7);
       }
 
       if (this.x < g.world.cam.x - 240) this.dead=true;
@@ -1136,6 +1097,10 @@
         this.dead=true;
         g.fx(this.cx,this.cy,"ash",14);
         g.player.killCount++;
+
+        // small sustain reward: makes runs survivable
+        if (chance(0.30)) g.player.soothe(3);
+        if (chance(0.18)) g.player.heal(2);
       }
     }
 
@@ -1143,28 +1108,25 @@
       const cam = g.world.cam;
       const sx = (this.x - cam.x) | 0;
       const sy = (this.y - cam.y) | 0;
-
       const img = assets.get("angel");
       const sprite = new Sprite(img, 28, 28, 6, 12);
       sprite.draw(ctx, sx-5, sy-6, this.animT, false, 1, 1);
 
-      // glow threat
-      ctx.globalAlpha = 0.10;
+      ctx.globalAlpha = 0.08;
       ctx.fillStyle = PAL.danger;
       ctx.fillRect(sx-8, sy-8, 30, 30);
       ctx.globalAlpha = 1;
     }
   }
 
-  // Ambiguous NPCs: nurse/patient — could help or attack based on trust/morality flags
   class AmbiguousNPC extends Entity {
     constructor(x, kind="nurse") {
       super(x, 0, 16, 30);
-      this.kind = kind; // nurse|patient
+      this.kind = kind;
       this.animT = rand(0,10);
       this.vx = rand(-30,30);
       this.timer = rand(0.6, 1.6);
-      this.hostile = false; // can flip after a dilemma
+      this.hostile = false;
       this.dead = false;
       this.hp = 50;
       this.cool = rand(0.2, 0.9);
@@ -1175,17 +1137,14 @@
       this.timer -= dt;
       this.cool = Math.max(0, this.cool - dt);
 
-      // wander in a limited band around the corridor
       if (this.timer <= 0) {
         this.vx = rand(-40,40);
         this.timer = rand(0.9,2.2);
         if (chance(0.35)) this.vx *= 0.2;
       }
-
-      // if hostile, stalk player
       if (this.hostile) {
         const dir = Math.sign(g.player.cx - this.cx);
-        this.vx = dir * (70 + g.tension.heat*25);
+        this.vx = dir * (60 + g.tension.heat*20);
       }
 
       this.vy += g.world.gravity * dt;
@@ -1193,15 +1152,13 @@
       this.y += this.vy * dt;
       g.world.collide(this);
 
-      // contact if hostile
       if (this.hostile && aabb(this.x,this.y,this.w,this.h, g.player.x,g.player.y,g.player.w,g.player.h) && this.cool<=0) {
-        g.player.hurt(12);
-        this.cool = 0.9;
+        g.player.hurt(10, this.cx);
+        this.cool = 1.0;
         g.fx(g.player.cx,g.player.cy,"blood",10);
-        AudioSys.ping("hit", 0.8);
+        AudioSys.ping("hit", 0.7);
       }
 
-      // avoid going behind camera too far
       if (this.x < g.world.cam.x - 140) this.x = g.world.cam.x - 140;
     }
 
@@ -1221,9 +1178,8 @@
       const sprite = new Sprite(img, 24, 34, 6, 9);
       sprite.draw(ctx, sx-4, sy-4, this.animT, this.vx < 0, 1, 1);
 
-      // hostility tells are subtle (anxiety: “maybe friend?”)
       if (this.hostile) {
-        ctx.globalAlpha = 0.08;
+        ctx.globalAlpha = 0.06;
         ctx.fillStyle = PAL.danger;
         ctx.fillRect(sx-8, sy-8, 28, 40);
         ctx.globalAlpha = 1;
@@ -1231,7 +1187,6 @@
     }
   }
 
-  // The green child (Patient 07): do NOT shoot
   class Patient07 extends Entity {
     constructor(x) {
       super(x, 0, 14, 24);
@@ -1254,7 +1209,6 @@
           this.vx = rand(-40,40);
           this.timer = rand(1.0, 2.3);
         }
-        // cower if bullets or enemies near
         for (const b of g.bullets) {
           if (hypot(b.x - this.x, b.y - this.y) < 80) {
             this.state="cower";
@@ -1269,7 +1223,6 @@
       this.y += this.vy * dt;
       g.world.collide(this);
 
-      // keep near camera region
       const left = g.world.cam.x + 12;
       const right = g.world.cam.x + RW - 32;
       if (this.x < left) this.vx = Math.abs(this.vx)+6;
@@ -1282,17 +1235,10 @@
       const sprite = new Sprite(img, 22, 30, 4, 6);
       sprite.draw(ctx, sx-4, sy-6, this.animT, false, 1, 1);
 
-      // readable glow so you know not to shoot
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = PAL.sick;
       ctx.fillRect(sx-10, sy-12, 34, 40);
       ctx.globalAlpha = 1;
-
-      if (this.state==="cower") {
-        ctx.fillStyle="#fff";
-        ctx.font="10px ui-monospace, monospace";
-        ctx.fillText("!", sx+4, sy-4);
-      }
     }
   }
 
@@ -1331,17 +1277,11 @@
       const img = assets.get("chest");
       const sprite = new Sprite(img, 26, 18, 4, 6);
       sprite.draw(ctx, sx-4, sy-4, this.bob, false, 1, 1, this.opened?2:null);
-      if (!this.opened) {
-        ctx.globalAlpha = 0.18;
-        ctx.fillStyle = "#ffb24a";
-        ctx.fillRect(sx+10, sy-2, 2, 2);
-        ctx.globalAlpha = 1;
-      }
     }
   }
 
   /***********************
-   * Bosses (2) with “psychological traits”
+   * Bosses (kept, but player survivability improved by i-frames + lower bullet dmg)
    ***********************/
   class BossBase extends Entity {
     constructor(x,y,w,h) {
@@ -1350,14 +1290,12 @@
       this.hp=500;
       this.phase=0;
       this.name="BOSS";
-      this.trait="…";
-      this.weapon="…";
       this.cool=0.8;
       this.animT=0;
     }
     hit(dmg, g) {
       this.hp -= dmg;
-      g.fx(this.cx,this.cy,"blood",14);
+      g.fx(this.cx,this.cy,"blood",12);
       if (this.hp <= 0) {
         this.dead = true;
         g.fx(this.cx,this.cy,"ash",48);
@@ -1370,19 +1308,16 @@
     constructor(x, g) {
       super(x, g.world.groundY - 72, 38, 72);
       this.name = "SERAPH-CLINICIAN";
-      this.trait = "Fixation on symmetry.";
-      this.weapon = "Suture Lines";
-      this.maxHp = 560;
-      this.hp = 560;
+      this.maxHp = 520;
+      this.hp = 520;
       this.lines = [];
     }
     update(dt, g) {
       this.animT += dt;
       this.cool = Math.max(0, this.cool - dt);
 
-      // stalk
       const dx = g.player.cx - this.cx;
-      this.vx = Math.sign(dx) * (40 + g.tension.heat*20);
+      this.vx = Math.sign(dx) * (35 + g.tension.heat*18);
 
       this.vy += g.world.gravity * dt;
       this.x += this.vx * dt;
@@ -1392,27 +1327,27 @@
       this.phase = (this.hp < this.maxHp*0.55) ? 1 : 0;
 
       if (this.cool <= 0) {
-        this.cool = this.phase ? 1.15 : 1.55;
+        this.cool = this.phase ? 1.25 : 1.65;
 
-        // place a damage “line” in world space
         const x0 = this.cx;
         const y0 = this.y + 18;
         const x1 = g.player.cx + rand(-30, 30);
         const y1 = g.player.cy + rand(-14, 14);
-        this.lines.push({x0,y0,x1,y1,t: this.phase ? 1.15 : 0.95});
+        this.lines.push({x0,y0,x1,y1,t: this.phase ? 1.05 : 0.90});
         AudioSys.ping("boss", 0.7);
 
-        // sometimes fire a small burst
-        if (this.phase && chance(0.55)) {
-          g.spawnBossBurst(this.cx, this.cy, g.player.cx + g.player.vx*0.2, g.player.cy, 3, 0.14, 260, 9);
+        if (this.phase && chance(0.45)) {
+          g.spawnBossBurst(this.cx, this.cy, g.player.cx, g.player.cy, 3, 0.14, 250, 7);
         }
       }
 
-      // update lines + damage if near
       for (const L of this.lines) {
         L.t -= dt;
-        const d = pointLineDistance(g.player.cx, g.player.cy, L.x0, L.y0, L.x1, L.y1);
-        if (d < 8 && chance(0.25)) g.player.hurt(2);
+        if (L.t > 0) {
+          // small zone hazard, not instant death
+          const d = pointLineDistance(g.player.cx, g.player.cy, L.x0, L.y0, L.x1, L.y1);
+          if (d < 8 && chance(0.18)) g.player.hurt(1, this.cx);
+        }
       }
       this.lines = this.lines.filter(L => L.t > 0);
     }
@@ -1423,7 +1358,7 @@
       const sprite = new Sprite(img, 64, 64, 6, 6);
       sprite.draw(ctx, sx-14, sy-10, this.animT, false, 1, 1);
 
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.85;
       ctx.strokeStyle = PAL.accent;
       for (const L of this.lines) {
         ctx.beginPath();
@@ -1439,36 +1374,29 @@
     constructor(x, g) {
       super(x, g.world.groundY - 120, 54, 44);
       this.name = "CHOIR-ENGINE";
-      this.trait = "Craves witness.";
-      this.weapon = "Chorus Burst";
-      this.maxHp = 480;
-      this.hp = 480;
+      this.maxHp = 450;
+      this.hp = 450;
       this.wob = rand(0,6.28);
     }
     update(dt, g) {
       this.animT += dt;
       this.cool = Math.max(0, this.cool - dt);
 
-      // hover align
       const dx = g.player.cx - this.cx;
-      this.x += Math.sign(dx) * (70 + g.tension.heat*35) * dt;
+      this.x += Math.sign(dx) * (60 + g.tension.heat*30) * dt;
       this.y = (g.world.groundY - 120) + Math.sin(g.time*2 + this.wob)*12;
 
       this.phase = (this.hp < this.maxHp*0.55) ? 1 : 0;
 
       if (this.cool <= 0) {
-        this.cool = this.phase ? 0.55 : 0.85;
-
-        // fires where you look (player cursor)
+        this.cool = this.phase ? 0.65 : 0.95;
         const mx = Input.mouse.nx * RW + g.world.cam.x;
         const my = Input.mouse.ny * RH;
-        g.spawnBossBurst(this.cx, this.cy, mx, my, this.phase?5:3, this.phase?0.11:0.14, 300, 8);
+        g.spawnBossBurst(this.cx, this.cy, mx, my, this.phase?4:3, this.phase?0.11:0.14, 270, 7);
 
-        // sometimes summon a flyer
-        if (this.phase && chance(0.45)) {
-          g.enemies.push(new EnemyAngel(g.world.cam.x + RW + 40, g.world.groundY - randi(60,110), "fly"));
+        if (this.phase && chance(0.35)) {
+          g.enemies.push(new EnemyAngel(g.world.cam.x + RW + 40, g.world.groundY - randi(70,120), "fly"));
         }
-
         AudioSys.ping("boss", 0.6);
       }
     }
@@ -1494,11 +1422,11 @@
   }
 
   /***********************
-   * Tension + Hallucinations (visual) + optional confusion
+   * Tension + Visual FX
    ***********************/
   class Tension {
     constructor() {
-      this.mode="atmosphere"; // atmosphere|frenetic|boss
+      this.mode="atmosphere";
       this.heat=0;
       this.spawnT=0;
       this.depth=0;
@@ -1509,22 +1437,19 @@
       const target = (this.mode==="frenetic" || this.mode==="boss") ? 1 : 0;
       this.heat = lerp(this.heat, target, 1 - Math.pow(0.0009, dt));
 
-      // trigger frenetic
       if (this.mode==="atmosphere") {
         if (g.player.x > g.world.thresholdX || g.flags.readNotes > 0 || g.flags.openedChests > 0 || g.flags.dilemmas > 0) {
           this.mode="frenetic";
-          this.spawnT = 0.22;
+          this.spawnT = 0.35;
           g.whisper("THE ASYLUM REMEMBERS YOU.", 2.2);
           AudioSys.ping("thump", 1.0);
         }
       }
 
-      // boss triggers
       if (!g.boss && this.mode!=="boss") {
         const wantBoss =
           (this.bossIndex===0 && this.depth > 260) ||
           (this.bossIndex===1 && this.depth > 620);
-
         if (wantBoss) {
           this.mode="boss";
           g.startBoss(this.bossIndex);
@@ -1533,12 +1458,11 @@
         }
       }
 
-      // spawn waves (not during boss)
       if (this.mode==="frenetic" && !g.boss) {
         this.spawnT -= dt;
-        const base = 0.8 - 0.28*this.heat;
         if (this.spawnT <= 0) {
-          this.spawnT = rand(base*0.6, base*1.2);
+          const diff = g.difficulty();
+          this.spawnT = rand(diff.spawnEvery * 0.75, diff.spawnEvery * 1.25);
           g.spawnWave();
         }
       }
@@ -1557,8 +1481,6 @@
       this.allowFaces=true;
 
       this.glitchKick=0;
-
-      this.palettePulse=0;
     }
 
     update(dt, g) {
@@ -1566,11 +1488,11 @@
       const heat = g.tension.heat;
       const stress = clamp((1-sanity)*0.95 + heat*0.65 + (g.boss?0.35:0), 0, 1);
 
-      this.noise = lerp(this.noise, 0.10 + stress*0.65, 1 - Math.pow(0.001, dt));
+      const zoneNoise = g.atmo ? g.atmo.noiseMult : 1.0;
+      this.noise = lerp(this.noise, (0.10 + stress*0.65) * zoneNoise, 1 - Math.pow(0.001, dt));
       this.scan  = lerp(this.scan,  0.06 + stress*0.33, 1 - Math.pow(0.001, dt));
       this.vign  = lerp(this.vign,  0.30 + stress*0.72, 1 - Math.pow(0.001, dt));
 
-      // face hallucinations (visual only)
       if (this.allowFaces && g.state==="play") {
         const pEvent = 0.001 + (1-sanity)*0.012 + heat*0.004 + (g.boss?0.006:0);
         if (chance(pEvent * dt * 60)) {
@@ -1585,15 +1507,11 @@
       this.faceFlashT = Math.max(0, this.faceFlashT - dt);
       if (this.faceFlashT <= 0) this.faceAlpha = lerp(this.faceAlpha, 0, 1 - Math.pow(0.0001, dt));
       this.glitchKick = Math.max(0, this.glitchKick - dt);
-
-      // palette pulse
-      this.palettePulse = lerp(this.palettePulse, stress, 1 - Math.pow(0.001, dt));
     }
 
     post(ctx, g) {
       const w = ctx.canvas.width, h = ctx.canvas.height;
 
-      // mild “kick” glitch (visual only)
       if (this.glitchKick > 0) {
         const k = this.glitchKick;
         const dx = (Math.sin(g.time*40)*2)*k;
@@ -1626,7 +1544,7 @@
       ctx.fillRect(0,0,b,h); ctx.fillRect(w-b,0,b,h);
       ctx.globalAlpha = 1;
 
-      // sanity tint (subtle)
+      // sanity tint
       const sanity = g.player ? (g.player.san/g.player.sanMax) : 1;
       const wash = clamp(1-sanity, 0, 1);
       if (wash > 0.02) {
@@ -1636,22 +1554,16 @@
         ctx.globalAlpha = 1;
       }
 
-      // face overlay (if available)
+      // face overlay
       if (this.faceAlpha > 0.01) {
         const img = assets.get(this.faceKey);
         ctx.save();
         ctx.globalAlpha = this.faceAlpha;
         if (img) {
-          // draw face stretched; slight offset
           const ox = (Math.sin(g.time*2)*6)|0;
           const oy = (Math.cos(g.time*1.7)*5)|0;
           ctx.globalCompositeOperation = "screen";
           ctx.drawImage(img, -12+ox, -12+oy, w+24, h+24);
-          ctx.globalCompositeOperation = "source-over";
-        } else {
-          ctx.globalCompositeOperation = "difference";
-          ctx.fillStyle = "#fff";
-          ctx.fillRect(0,0,w,h);
           ctx.globalCompositeOperation = "source-over";
         }
         ctx.restore();
@@ -1660,13 +1572,12 @@
   }
 
   /***********************
-   * Dialogue / Dilemmas
+   * Dialogue (minimal)
    ***********************/
   class DialogueScene {
     constructor(config) {
       this.pausesGame = true;
       this.cfg = config;
-      this.choiceIndex = -1;
     }
     onEnter() {
       UI.dialogue.classList.remove("hidden");
@@ -1699,7 +1610,6 @@
       if (Input.consume("Digit3")) this.pick(2);
       if (Input.consume("Digit4")) this.pick(3);
     }
-    draw() {}
   }
 
   function escapeHtml(s){
@@ -1709,11 +1619,11 @@
   }
 
   /***********************
-   * Core Game Scene
+   * Game Scene
    ***********************/
   class GameScene {
     constructor() {
-      this.state = "play"; // play|over
+      this.state = "play";
       this.world = new World();
       this.player = null;
 
@@ -1731,14 +1641,9 @@
 
       this.tension = new Tension();
       this.fxSys = new VisualFX();
+      this.atmo = new AtmosphereManager();
 
-      this.flags = {
-        readNotes: 0,
-        openedChests: 0,
-        dilemmas: 0,
-        metNurse: false,
-        metPatient: false,
-      };
+      this.flags = { readNotes: 0, openedChests: 0, dilemmas: 0, metNurse: false, metPatient: false };
 
       this.time = 0;
       this.lastWhisper = { text:"", t:0 };
@@ -1763,6 +1668,7 @@
 
       this.tension = new Tension();
       this.fxSys = new VisualFX();
+      this.atmo = new AtmosphereManager();
       this.fxSys.allowFaces = !!settings.allowFaces;
 
       this.flags.readNotes = 0;
@@ -1775,52 +1681,55 @@
       Input.confusionT = 0;
 
       AudioSys.setHardMode(!!settings.hardAudio);
-
       this._seedItems();
-
       this.whisper("FOG. BEDS BEHIND WALLS. NAMES REMOVED.", 2.2);
+    }
+
+    // NEW: difficulty pacing (cap spawns, adaptive)
+    difficulty() {
+      const d = Math.floor(this.player.x / 10);
+      const stage = clamp(d / 650, 0, 1);
+      const struggling = (this.player.hp / this.player.hpMax) < 0.35 || (this.player.san / this.player.sanMax) < 0.30;
+      const assist = struggling ? 0.22 : 0;
+
+      return {
+        stage,
+        spawnEvery: lerp(1.10, 0.62, stage) + assist,
+        maxEnemies: Math.floor(4 + stage * 4), // 4..8
+        flyerChance: lerp(0.28, 0.52, stage),
+      };
     }
 
     _seedItems() {
       this.notes.length = 0;
       this.chests.length = 0;
-
-      const noteXs = [520, 980, 1520, 2100, 2680];
-      noteXs.forEach((x,i)=> this.notes.push(new NoteItem(x + randi(-30,30), i)));
-
-      const chestXs = [740, 1280, 1860, 2440, 3020];
-      chestXs.forEach((x)=> this.chests.push(new Chest(x + randi(-40,40))));
+      [520, 980, 1520, 2100, 2680].forEach((x,i)=> this.notes.push(new NoteItem(x + randi(-30,30), i)));
+      [740, 1280, 1860, 2440, 3020].forEach((x)=> this.chests.push(new Chest(x + randi(-40,40))));
     }
 
-    whisper(text, t=2.0) {
-      this.lastWhisper.text = text;
-      this.lastWhisper.t = t;
-    }
-
+    whisper(text, t=2.0) { this.lastWhisper.text = text; this.lastWhisper.t = t; }
     fx(x,y,kind,n) { for (let i=0;i<n;i++) this.particles.push(new Particle(x,y,kind)); }
 
     spawnWave() {
-      // angels (asylum “orderlies” of the fog)
-      const count = randi(1,3);
+      const diff = this.difficulty();
+      if (this.enemies.length >= diff.maxEnemies) return;
+
+      const room = diff.maxEnemies - this.enemies.length;
+      const count = Math.min(room, randi(1, 2 + Math.floor(diff.stage * 1.5)));
+
       for (let i=0;i<count;i++) {
-        const type = chance(0.45) ? "fly" : "walk";
+        const type = chance(diff.flyerChance) ? "fly" : "walk";
         const x = this.world.cam.x + RW + randi(20,80);
         const y = (type==="fly") ? (this.world.groundY - randi(70,120)) : (this.world.groundY - 50);
         this.enemies.push(new EnemyAngel(x,y,type));
       }
 
-      // chance for ambiguous NPC encounter during exploration/frenetic transitions
-      if (!this.flags.metNurse && chance(0.07)) {
-        this.flags.metNurse = true;
-        this.spawnNPC("nurse");
-      }
-      if (!this.flags.metPatient && chance(0.07)) {
-        this.flags.metPatient = true;
-        this.spawnNPC("patient");
-      }
+      // rarer NPC spawns
+      if (!this.flags.metNurse && chance(0.05)) { this.flags.metNurse = true; this.spawnNPC("nurse"); }
+      if (!this.flags.metPatient && chance(0.05)) { this.flags.metPatient = true; this.spawnNPC("patient"); }
 
-      // child may wander in sometimes (keeps anxiety high)
-      if (!this.child && chance(0.06)) {
+      // child rarer
+      if (!this.child && chance(0.035)) {
         this.child = new Patient07(this.world.cam.x + RW - randi(50,90));
         this.whisper("PATIENT 07 ENTERS THE HALL.", 2.2);
         AudioSys.ping("thump", 0.9);
@@ -1835,8 +1744,6 @@
     }
 
     startBoss(index) {
-      // clear regular enemies a bit
-      this.enemies = this.enemies.filter(e => e.x < this.world.cam.x - 60);
       this.bullets.length = 0;
       this.bossBullets.length = 0;
 
@@ -1848,37 +1755,27 @@
         this.whisper("CHOIR-ENGINE HUNTS YOUR GAZE.", 2.2);
       }
       AudioSys.ping("boss", 1.0);
-
-      // also force a moral dilemma right before boss 1
-      if (index === 0) {
-        this.triggerDilemma("preboss");
-      }
     }
 
     shoot(player, ax, ay) {
       AudioSys.ping("shoot", 0.7);
 
-      // melee = short arc hit instead of bullet
+      // melee
       if (player.weapon.melee) {
-        // melee costs less sanity but requires closeness
         player.san = clamp(player.san - 0.2, 0, player.sanMax);
-        const range = 28;
+        const range = 30;
         const px = player.cx + player.facing*10;
         const py = player.cy;
-        // hit enemies + hostile NPCs (never child via melee unless you walk into it and swing)
         for (const e of this.enemies) {
-          if (e.dead) continue;
-          if (hypot(e.cx - px, e.cy - py) < range) e.hit(player.weapon.dmg, this);
+          if (!e.dead && hypot(e.cx - px, e.cy - py) < range) e.hit(player.weapon.dmg, this);
         }
         for (const n of this.npcs) {
-          if (n.dead) continue;
-          if (hypot(n.cx - px, n.cy - py) < range && n.hostile) n.hit(player.weapon.dmg, this);
+          if (!n.dead && n.hostile && hypot(n.cx - px, n.cy - py) < range) n.hit(player.weapon.dmg, this);
         }
         this.fx(px, py, "spark", 10);
         return;
       }
 
-      // ranged bullet(s)
       const ox = player.x + (player.facing>0 ? player.w : 0);
       const oy = player.y + 14;
 
@@ -1896,8 +1793,7 @@
         this.bullets.push(b);
       }
 
-      // sanity cost
-      const sc = player.weapon.sanityCost || 0.55;
+      const sc = player.weapon.sanityCost || 0.45;
       player.san = clamp(player.san - sc, 0, player.sanMax);
     }
 
@@ -1916,157 +1812,34 @@
     openChest(chest) {
       chest.opened = true;
       this.flags.openedChests++;
-
       this.whisper("THE CHEST OPENS LIKE A MOUTH.", 2.0);
       AudioSys.ping("thump", 0.8);
 
       const roll = Math.random();
-      if (roll < 0.38) {
+      if (roll < 0.48) {
         this.player.heal(28);
         this.whisper("FLESH REMEMBERS HOW TO CLOSE.", 1.8);
-      } else if (roll < 0.62) {
-        this.player.soothe(36);
+      } else if (roll < 0.78) {
+        this.player.soothe(34);
         this.whisper("THE LIGHT RETURNS (WRONG).", 1.8);
-      } else if (roll < 0.82) {
-        // power-down: explicit and optional confusion, never random without opt-in
-        this.applyPowerDown();
       } else {
-        // chest triggers a moral encounter
-        this.triggerDilemma("chest");
-      }
-    }
-
-    applyPowerDown() {
-      const p = this.player;
-      const roll = randi(0,2);
-      if (roll === 0) {
-        p.status.jamT = Math.max(p.status.jamT, rand(4,8));
-        this.whisper("THE WEAPON FEELS FOREIGN.", 2.0);
-      } else if (roll === 1) {
-        p.status.shiverT = Math.max(p.status.shiverT, rand(4,8));
-        this.whisper("YOUR AIM STARTS LISTENING TO SOMETHING ELSE.", 2.0);
-      } else {
-        // only if allowed
-        if (Input.confusionEnabled) {
-          Input.confusionT = Math.max(Input.confusionT, rand(2.2, 4.8));
+        // power-down, but fair
+        if (Input.confusionEnabled && chance(0.4)) {
+          Input.confusionT = Math.max(Input.confusionT, rand(2.0, 3.6));
           this.whisper("CONFUSION: CONTROLS INVERTED (TEMP).", 2.0);
         } else {
-          // fallback: sanity sting instead
-          p.san = clamp(p.san - rand(16, 30), 0, p.sanMax);
-          this.whisper("A STAIN SPREADS BEHIND YOUR EYES.", 2.0);
+          this.player.status.shiverT = Math.max(this.player.status.shiverT, rand(3.0, 6.0));
+          this.whisper("YOUR AIM STARTS LISTENING TO SOMETHING ELSE.", 2.0);
         }
       }
-    }
-
-    triggerDilemma(tag) {
-      this.flags.dilemmas++;
-
-      const p = this.player;
-      const name = p.name;
-
-      // Three “anxious” dilemmas: you can’t know if it helps or harms.
-      const dilemmas = {
-        chest: {
-          title: "A LOCKED DOOR BREATHES",
-          sub: "You hear a person crying behind the metal.",
-          body:
-`${name}, you see a key dangling from a wrist through the bars.
-A nurse stands nearby, calm, watching you watch.
-
-The crying stops when you raise your hand.`,
-          choices: [
-            {
-              label: "Take the key from the wrist.",
-              hint: "Gain ammo focus, lose sanity, NPC trust shifts.",
-              onPick: () => {
-                p.san = clamp(p.san - 18, 0, p.sanMax);
-                p.morality -= 1;
-                p.trust -= 1;
-                p.status.jamT = Math.max(p.status.jamT, 2.5);
-                this.whisper("THE ASYLUM APPROVES YOUR EFFICIENCY.", 2.0);
-              }
-            },
-            {
-              label: "Leave the key. Whisper an apology.",
-              hint: "Gain sanity, but tension rises (you feel hunted).",
-              onPick: () => {
-                p.soothe(18);
-                p.morality += 1;
-                this.tension.mode = "frenetic";
-                this.tension.spawnT = 0.18;
-                this.whisper("SOMETHING HEARD YOU CHOOSE.", 2.0);
-              }
-            },
-            {
-              label: "Ask the nurse what’s happening.",
-              hint: "NPC may become ally... or bait.",
-              onPick: () => {
-                p.trust += 1;
-                // spawn nurse npc (ambiguous)
-                this.spawnNPC("nurse");
-                this.whisper("SHE SMILES THROUGH BANDAGES.", 2.0);
-              }
-            }
-          ]
-        },
-        preboss: {
-          title: "THE TRIAGE ROOM",
-          sub: "A patient crawls toward Patient 07.",
-          body:
-`Patient 07 is here. The child stares at the floor.
-A patient with a broken jaw crawls toward her, hands open.
-
-You don't know if it's to help... or to tear.`,
-          choices: [
-            {
-              label: "Intervene violently.",
-              hint: "Save the child now. Trust decreases, frenetic spikes.",
-              onPick: () => {
-                p.morality -= 1;
-                p.trust -= 1;
-                this.whisper("YOUR MERCY WEARS A KNIFE.", 2.0);
-                this.tension.mode = "boss";
-              }
-            },
-            {
-              label: "Stand between them. Do not shoot.",
-              hint: "Harder fight. Sanity improves. Child stays.",
-              onPick: () => {
-                p.morality += 1;
-                p.soothe(14);
-                this.whisper("YOU CHOOSE FEAR WITHOUT VIOLENCE.", 2.0);
-                // ensure child exists for protection tension
-                if (!this.child) this.child = new Patient07(this.world.cam.x + RW - 90);
-              }
-            },
-            {
-              label: "Walk away.",
-              hint: "You survive longer. You won’t feel clean.",
-              onPick: () => {
-                p.san = clamp(p.san - 10, 0, p.sanMax);
-                p.morality -= 1;
-                this.whisper("THE ASYLUM DOESN'T JUDGE. IT RECORDS.", 2.0);
-              }
-            }
-          ]
-        }
-      };
-
-      const cfg = dilemmas[tag] || dilemmas.chest;
-      SceneStack.push(new DialogueScene({
-        title: cfg.title,
-        sub: cfg.sub,
-        body: cfg.body,
-        choices: cfg.choices
-      }));
     }
 
     update(dt) {
-      this.time += dt;
+      if (this.state !== "play") return;
 
+      this.time += dt;
       if (this.lastWhisper.t > 0) this.lastWhisper.t -= dt;
 
-      // optional confusion timer
       Input.confusionT = Math.max(0, Input.confusionT - dt);
 
       // camera follow
@@ -2074,28 +1847,28 @@ You don't know if it's to help... or to tear.`,
       this.world.cam.x = lerp(this.world.cam.x, targetX, 1 - Math.pow(0.00025, dt));
       this.world.cam.x = Math.max(0, this.world.cam.x);
 
-      // tension + audio
+      // zone + tension
+      this.atmo.update(dt, this);
       this.tension.update(dt, this);
       AudioSys.setIntensity(this.tension.heat, this.tension.mode);
 
-      // visuals (faces/noise)
+      // visuals
       this.fxSys.update(dt, this);
 
       // player
       this.player.update(dt, this);
 
       // items
-      for (const n of this.notes) n.update(dt, this);
+      for (const n of this.notes) if (!n.dead) n.update(dt, this);
       for (const c of this.chests) c.update(dt, this);
 
       // child
       if (this.child) this.child.update(dt, this);
 
-      // NPCs
+      // npcs/enemies/boss
       for (const n of this.npcs) n.update(dt, this);
       this.npcs = this.npcs.filter(n => !n.dead);
 
-      // enemies/boss
       for (const e of this.enemies) e.update(dt, this);
       this.enemies = this.enemies.filter(e => !e.dead);
 
@@ -2108,164 +1881,57 @@ You don't know if it's to help... or to tear.`,
         }
       }
 
-      // bullets
+      // bullets/particles
       for (const b of this.bullets) b.update(dt, this);
       for (const b of this.bossBullets) b.update(dt, this);
       this.bullets = this.bullets.filter(b => !b.dead);
       this.bossBullets = this.bossBullets.filter(b => !b.dead);
 
-      // particles
       for (const p of this.particles) p.update(dt, this);
       this.particles = this.particles.filter(p => p.life > 0);
 
       // interactions
       this._hint = "";
       if (Input.interact()) {
-        // notes
         for (const n of this.notes) {
-          if (aabb(this.player.x,this.player.y,this.player.w,this.player.h, n.x-10,n.y-10, 30,30)) {
+          if (!n.dead && aabb(this.player.x,this.player.y,this.player.w,this.player.h, n.x-10,n.y-10, 30,30)) {
             n.dead = true;
             this.flags.readNotes++;
+            this.whisper("PAPER THAT REMEMBERS YOUR HAND.", 2.0);
             AudioSys.ping("thump", 0.7);
-            this.openNote(n.id);
             break;
           }
         }
-        // chests
         for (const c of this.chests) {
           if (!c.opened && aabb(this.player.x,this.player.y,this.player.w,this.player.h, c.x-10,c.y-10, 34,30)) {
             this.openChest(c);
             break;
           }
         }
-        // NPC talk
-        for (const npc of this.npcs) {
-          if (aabb(this.player.x,this.player.y,this.player.w,this.player.h, npc.x-12,npc.y-12, 40,40)) {
-            this.npcEncounter(npc);
-            break;
-          }
-        }
       } else {
-        // show hints when near interactables
-        if (this.notes.some(n => aabb(this.player.x,this.player.y,this.player.w,this.player.h, n.x-10,n.y-10, 30,30))) this._hint = "Press E to read note";
+        if (this.notes.some(n => !n.dead && aabb(this.player.x,this.player.y,this.player.w,this.player.h, n.x-10,n.y-10, 30,30))) this._hint = "Press E to read note";
         if (this.chests.some(c => !c.opened && aabb(this.player.x,this.player.y,this.player.w,this.player.h, c.x-10,c.y-10, 34,30))) this._hint = "Press E to open chest";
-        if (this.npcs.some(n => aabb(this.player.x,this.player.y,this.player.w,this.player.h, n.x-12,n.y-12, 40,40))) this._hint = "Press E to speak";
       }
 
-      // combat collisions
       this.resolveCombat();
 
       // lose
-      if (this.player.hp <= 0) {
-        this.gameOver("PHYSICAL VESSEL DESTROYED\n\nThe asylum keeps walking without you.");
-      }
-      if (this.player.san <= 0) {
-        this.gameOver("MIND FRACTURED\n\nThe fog learns your face and wears it.");
-      }
-    }
-
-    npcEncounter(npc) {
-      // unclear intentions. choice shifts hostility and trust.
-      const p = this.player;
-      const name = p.name;
-
-      const isNurse = npc.kind === "nurse";
-      const title = isNurse ? "THE NURSE WITHOUT EYES" : "THE PATIENT WITH THE WRONG LULLABY";
-      const sub = isNurse ? "She holds a syringe with no needle." : "He hums and forgets his own name.";
-      const body = isNurse
-        ? `${name}, she tilts her head.\n\n"Are you here to be cured, or to be correct?"\n\nYou can’t tell if she wants to help you… or inventory you.`
-        : `${name}, he stares at your hands.\n\n"Which one of them is real?"\n\nHe offers you a key-ring made of teeth.`;
-
-      SceneStack.push(new DialogueScene({
-        title, sub, body,
-        choices: [
-          {
-            label: "Accept the offer.",
-            hint: "Might help… might poison.",
-            onPick: () => {
-              p.trust += 1;
-              if (chance(0.55)) {
-                // help
-                p.heal(18);
-                p.soothe(10);
-                this.whisper(isNurse ? "SHE PATCHES YOU WITH COLD HANDS." : "HE GIVES YOU A REAL KEY. SOMEHOW.", 2.0);
-              } else {
-                // harm -> hostility later
-                p.san = clamp(p.san - 14, 0, p.sanMax);
-                npc.hostile = true;
-                this.whisper("THE GIFT HAS TEETH.", 2.0);
-              }
-            }
-          },
-          {
-            label: "Refuse politely.",
-            hint: "Safer now. They may remember.",
-            onPick: () => {
-              p.morality += 1;
-              p.trust += 0;
-              if (chance(0.35)) {
-                npc.hostile = true;
-                this.whisper("REFUSAL SOUNDS LIKE INSULT HERE.", 2.0);
-              } else {
-                this.whisper("THEY LET YOU PASS. TOO EASILY.", 2.0);
-              }
-            }
-          },
-          {
-            label: "Threaten them.",
-            hint: "Immediate hostility, but might drop loot.",
-            onPick: () => {
-              p.morality -= 1;
-              npc.hostile = true;
-              this.whisper("THEIR SMILE BECOMES SHARP.", 2.0);
-            }
-          }
-        ]
-      }));
-    }
-
-    openNote(id) {
-      const p = this.player;
-      const tone = (p.avi === 1) ? "occult" : (p.avi === 2 ? "heavy" : "vanguard");
-
-      const pages = [
-        (name)=> `Ward Log:\n\nPatient ${name} refuses to admit they have a face.\nThey keep wiping the mirror.\nThe mirror keeps bleeding.`,
-        (name)=> `Intercom Transcript:\n\n"${name}, if you hear the singing, do not look for mouths.\nThey’re not attached to anything.\nThey just want to be witnessed."`,
-        (name)=> `Surgical Note:\n\n"The Clinician will try to make you symmetrical.\nIt will cut off what doesn't match.\nIf you love something, hide it."`,
-        (name)=> `Handwritten:\n\n"${name} — you can leave any time.\nBut the doors will come with you.\nThey will reappear in your dreams."`,
-        (name)=> `Inventory List:\n\nBandages. Restraints. Keys.\nOne green ribbon.\nOne child that does not belong to this building.`
-      ];
-
-      const body = pages[id % pages.length](p.name) + "\n\n—\n" +
-        (tone==="occult" ? "Occultist margin: The asylum is a sigil. Walk its strokes carefully."
-        : tone==="heavy" ? "Heavy note: If it lies, break it. If it begs, listen anyway."
-        : "Vanguard memo: Muzzle discipline. The child is non-combatant.");
-
-      SceneStack.push(new DialogueScene({
-        title: "ARCHIVE FRAGMENT",
-        sub: "Paper found on the floor. Warm.",
-        body,
-        choices: [{label:"Close", hint:"Return to corridor", onPick: ()=>{}}]
-      }));
+      if (this.player.hp <= 0) this.gameOver("PHYSICAL VESSEL DESTROYED\n\nThe asylum keeps walking without you.");
+      if (this.player.san <= 0) this.gameOver("MIND FRACTURED\n\nThe fog learns your face and wears it.");
     }
 
     resolveCombat() {
-      // player bullets hit enemies, boss, hostile NPC, or child (BAD ENDING)
       for (const b of this.bullets) {
         if (b.dead) continue;
 
-        // child hit = bad ending
+        // child hit => bad ending
         if (this.child && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)) {
           b.dead = true;
           this.fx(this.child.cx, this.child.cy, "blood", 30);
-          this.gameOver(
-            "YOU SHOT PATIENT 07.\n\nBad Ending:\nThe asylum stops pretending it needs you.",
-            true
-          );
+          this.gameOver("YOU SHOT PATIENT 07.\n\nBad Ending:\nThe asylum stops pretending it needs you.", true);
           return;
         }
 
-        // enemies
         for (const e of this.enemies) {
           if (e.dead) continue;
           if (aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)) {
@@ -2279,44 +1945,27 @@ You don't know if it's to help... or to tear.`,
           }
         }
 
-        // boss
         if (this.boss && !this.boss.dead && aabb(b.x,b.y,b.w,b.h, this.boss.x,this.boss.y,this.boss.w,this.boss.h)) {
           this.boss.hit(b.dmg, this);
           AudioSys.ping("hit", 0.7);
           b.dead = true;
         }
-
-        // hostile NPC
-        for (const n of this.npcs) {
-          if (n.dead) continue;
-          if (!n.hostile) continue;
-          if (aabb(b.x,b.y,b.w,b.h, n.x,n.y,n.w,n.h)) {
-            n.hit(b.dmg, this);
-            b.dead = true;
-            AudioSys.ping("hit", 0.6);
-            break;
-          }
-        }
       }
 
-      // boss bullets hit player or child (still bad ending)
       for (const b of this.bossBullets) {
         if (b.dead) continue;
 
         if (aabb(b.x,b.y,b.w,b.h, this.player.x,this.player.y,this.player.w,this.player.h)) {
           b.dead = true;
-          this.player.hurt(9);
-          this.fx(this.player.cx,this.player.cy,"blood",12);
+          this.player.hurt(7, b.x); // REBALANCED (was harsher)
+          this.fx(this.player.cx,this.player.cy,"blood",10);
           AudioSys.ping("hit", 0.9);
         }
 
         if (this.child && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)) {
           b.dead = true;
           this.fx(this.child.cx,this.child.cy,"blood",30);
-          this.gameOver(
-            "THE SONG TOUCHED PATIENT 07.\n\nBad Ending:\nYou didn’t pull the trigger — but the asylum doesn't care.",
-            true
-          );
+          this.gameOver("THE SONG TOUCHED PATIENT 07.\n\nBad Ending:\nYou didn’t pull the trigger — but the asylum doesn't care.", true);
           return;
         }
       }
@@ -2335,41 +1984,28 @@ You don't know if it's to help... or to tear.`,
     draw() {
       const t = this.time;
 
-      // world
-      this.world.draw(bctx, t);
+      this.world.draw(bctx, t, this.atmo);
 
-      // notes/chests
+      // items
       for (const n of this.notes) if (!n.dead) n.draw(bctx, this);
       for (const c of this.chests) c.draw(bctx, this);
 
-      // child, NPCs
       if (this.child) this.child.draw(bctx, this);
       for (const n of this.npcs) n.draw(bctx, this);
-
-      // enemies + boss
       for (const e of this.enemies) e.draw(bctx, this);
       if (this.boss) this.boss.draw(bctx, this);
 
-      // bullets
       for (const b of this.bossBullets) b.draw(bctx, this.world.cam);
       for (const b of this.bullets) b.draw(bctx, this.world.cam);
 
-      // player
       if (this.player) this.player.draw(bctx, this);
 
-      // particles
       for (const p of this.particles) p.draw(bctx, this.world.cam);
 
-      // lighting
       this.drawLighting(bctx);
-
-      // whisper + hint + crosshair
       this.drawOverlayText(bctx);
-
-      // post fx
       this.fxSys.post(bctx, this);
 
-      // upscale
       ctx.fillStyle = "#000";
       ctx.fillRect(0,0,W,H);
 
@@ -2383,20 +2019,21 @@ You don't know if it's to help... or to tear.`,
       const p = this.player;
       if (!p) return;
 
+      const fogMult = this.atmo ? this.atmo.fogMult : 1.0;
+
       const px = (p.x - this.world.cam.x + p.w/2) | 0;
       const py = (p.y + p.h/2) | 0;
       const rad = p.lantern;
 
-      const fog = ctx.createRadialGradient(px, py, rad*0.2, px, py, rad*1.65);
+      const fog = ctx.createRadialGradient(px, py, rad*0.2, px, py, rad*1.65 * fogMult);
       fog.addColorStop(0, "rgba(0,0,0,0)");
       fog.addColorStop(0.55, "rgba(0,0,0,0.45)");
       fog.addColorStop(1, "rgba(0,0,0,0.98)");
       ctx.fillStyle = fog;
       ctx.fillRect(0,0,RW,RH);
 
-      // mist pillars
       ctx.globalCompositeOperation = "screen";
-      ctx.globalAlpha = 0.14 + this.tension.heat*0.16;
+      ctx.globalAlpha = (0.12 + this.tension.heat*0.15) * fogMult;
       ctx.fillStyle = "#111";
       for (let i=0;i<10;i++){
         const mx = ((performance.now()/50 + i*210) % (RW + 420)) - 210;
@@ -2407,7 +2044,6 @@ You don't know if it's to help... or to tear.`,
     }
 
     drawOverlayText(ctx) {
-      // crosshair
       const mx = (Input.mouse.nx * RW) | 0;
       const my = (Input.mouse.ny * RH) | 0;
       ctx.globalAlpha = 0.85;
@@ -2420,32 +2056,18 @@ You don't know if it's to help... or to tear.`,
       ctx.stroke();
       ctx.globalAlpha = 1;
 
-      // whisper
       if (this.lastWhisper.t > 0) {
         ctx.font = "10px ui-monospace, monospace";
         ctx.fillStyle = "#9a9aaa";
-        const wob = ((Math.sin(this.time*16) * (this.tension.heat*2))|0);
         ctx.globalAlpha = clamp(this.lastWhisper.t/2, 0, 1) * 0.9;
-        ctx.fillText(this.lastWhisper.text, 8 + wob, RH - 10);
+        ctx.fillText(this.lastWhisper.text, 8, RH - 10);
         ctx.globalAlpha = 1;
       }
 
-      // hint
       if (this._hint) {
         ctx.font = "10px ui-monospace, monospace";
         ctx.fillStyle = "#7f7f92";
         ctx.fillText(this._hint, 8, RH - 22);
-      }
-
-      // boss hp bar
-      if (this.boss && !this.boss.dead) {
-        const w=220,h=6,x=50,y=10;
-        ctx.fillStyle="#000"; ctx.fillRect(x-1,y-1,w+2,h+2);
-        ctx.fillStyle="#2a2a33"; ctx.fillRect(x,y,w,h);
-        ctx.fillStyle=PAL.accent; ctx.fillRect(x,y,(w*(this.boss.hp/this.boss.maxHp))|0,h);
-        ctx.fillStyle="#ddd";
-        ctx.font="10px ui-monospace, monospace";
-        ctx.fillText(this.boss.name, x, y+16);
       }
     }
   }
@@ -2480,28 +2102,24 @@ You don't know if it's to help... or to tear.`,
     const name = (UI.nameInput.value || "SEEKER").trim().slice(0,18) || "SEEKER";
     UI.nameInput.value = name;
 
-    // load repo assets if present (safe if missing)
     await assets.tryLoadManifest();
     updateAssetUI();
 
     AudioSys.start();
     AudioSys.setHardMode(UI.toggleHardAudio.checked);
 
-    // settings
     const settings = {
       allowConfusion: UI.toggleConfusion.checked,
       allowFaces: UI.toggleFaces.checked,
       hardAudio: UI.toggleHardAudio.checked
     };
 
-    // start game
     UI.menu.classList.add("hidden");
     UI.over.classList.add("hidden");
     UI.hud.classList.remove("hidden");
 
     game.startRun(name, selectedAvi, settings);
 
-    // scene stack base scene
     SceneStack.stack.length = 0;
     SceneStack.push(game);
   });
@@ -2528,27 +2146,7 @@ You don't know if it's to help... or to tear.`,
     SceneStack.stack.length = 0;
   });
 
-  // Update HUD each frame
-  function updateHUD() {
-    if (!game.player) return;
-
-    const p = game.player;
-    UI.hpFill.style.width = `${(p.hp/p.hpMax*100)|0}%`;
-    UI.sanFill.style.width = `${(p.san/p.sanMax*100)|0}%`;
-    UI.weaponLabel.textContent = `Weapon: ${p.weapon.name}`;
-    UI.depthLabel.textContent = `DEPTH: ${Math.floor(p.x/10)}m`;
-
-    UI.modeLabel.textContent =
-      game.tension.mode === "atmosphere" ? "ATMOSPHERE" :
-      game.tension.mode === "boss" ? "BOSS" : "FRENETIC";
-
-    const conf = (Input.confusionEnabled && Input.confusionT > 0) ? "CONFUSION ACTIVE" : "";
-    UI.hintLabel.textContent = conf || "";
-  }
-
-  /***********************
-   * Main loop
-   ***********************/
+  // FIXED main loop: no double-update
   let last = performance.now();
   function loop(now) {
     const dt = Math.min((now - last) / 1000, 0.05);
@@ -2556,35 +2154,37 @@ You don't know if it's to help... or to tear.`,
 
     const top = SceneStack.top();
     if (top) {
-      // update
-      if (top.update) top.update(dt);
+      // if top is a pause-scene (dialogue), update it; otherwise update game
+      if (top !== game && top.pausesGame) top.update?.(dt);
+      else game.update(dt);
 
-      // draw always from base game scene (keeps world visible under dialogue)
-      if (SceneStack.stack[0] === game) {
-        // only advance gameplay if top doesn't pause
-        if (top === game) game.update(dt);
-        // dialogue overlays are DOM, so still draw world
-        game.draw();
-      } else if (top.draw) {
-        top.draw();
+      // always draw game behind overlays
+      game.draw();
+
+      // HUD updates
+      if (game.player) {
+        const p = game.player;
+        UI.hpFill.style.width = `${(p.hp/p.hpMax*100)|0}%`;
+        UI.sanFill.style.width = `${(p.san/p.sanMax*100)|0}%`;
+        UI.weaponLabel.textContent = `Weapon: ${p.weapon.name}`;
+        UI.depthLabel.textContent = `DEPTH: ${Math.floor(p.x/10)}m`;
+        UI.modeLabel.textContent =
+          game.tension.mode === "atmosphere" ? "ATMOSPHERE" :
+          game.tension.mode === "boss" ? "BOSS" : "FRENETIC";
+        UI.zoneLabel.textContent = `ZONE: ${game.atmo?.name || "—"}`;
+
+        const conf = (Input.confusionEnabled && Input.confusionT > 0) ? "CONFUSION ACTIVE" : "";
+        UI.hintLabel.textContent = conf || "";
       }
-
-      updateHUD();
-    } else {
-      // menu idle visuals (optional): simple black
-      bctx.fillStyle = "#000";
-      bctx.fillRect(0,0,RW,RH);
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0,0,W,H);
-      ctx.drawImage(buf, 0,0,RW,RH, 0,0,W,H);
     }
 
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 
-  // Start audio on any pointerdown to satisfy strict browsers
+  // Start audio on any pointerdown
   canvas.addEventListener("pointerdown", () => AudioSys.start());
 
 })();
+
 
