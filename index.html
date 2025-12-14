@@ -3,880 +3,2556 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LO-FI ANGELS: REBIRTH</title>
+  <title>LO-FI ANGELS: REBIRTH // ARTIFACT BUILD</title>
   <link rel="icon" href="data:,">
   <style>
     :root{
       --bg:#020202;
-      --panel:#111116;
-      --text:#a0a0b0;
+      --panel:#0e0e14;
+      --text:#a7a7b4;
       --accent:#7d3cff;
       --danger:#ff2a2a;
-      --light:#e0e0e0;
+      --ok:#43ff9b;
+      --light:#e8e8ef;
+      --line:#2a2a3a;
     }
-    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family:'Courier New', monospace; overflow:hidden;}
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; overflow:hidden;}
     #wrap{position:fixed; inset:0;}
     canvas{position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; background:#050505;}
-    
-    /* CRT Scanline Overlay */
+
+    /* CRT Overlay */
     #crt{
       position:absolute; inset:0; pointer-events:none; z-index:10;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+      background:
+        linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.28) 50%),
+        linear-gradient(90deg, rgba(255,0,0,0.06), rgba(0,255,0,0.02), rgba(0,0,255,0.06));
       background-size: 100% 2px, 3px 100%;
-      box-shadow: inset 0 0 80px rgba(0,0,0,0.7);
+      box-shadow: inset 0 0 90px rgba(0,0,0,0.75);
+      mix-blend-mode: screen;
+      opacity: 0.9;
     }
 
     .overlay{
       position:absolute; inset:0; display:grid; place-items:center; z-index:20;
-      background: rgba(0,0,0,0.85);
-      transition: opacity 0.3s;
+      background: rgba(0,0,0,0.86);
     }
     .panel{
-      width:min(800px, 90vw);
-      background:var(--panel); border:1px solid #333; box-shadow: 0 0 20px #000;
-      padding:24px; position:relative;
+      width:min(920px, 92vw);
+      background:var(--panel); border:1px solid var(--line); box-shadow: 0 0 26px #000;
+      padding:22px; position:relative;
+      border-radius: 14px;
     }
     .panel::before{
-      content:""; position:absolute; top:-1px; left:10px; right:10px; height:1px; background:var(--accent); box-shadow:0 0 10px var(--accent);
+      content:""; position:absolute; top:-1px; left:12px; right:12px; height:1px; background:var(--accent);
+      box-shadow:0 0 12px var(--accent);
     }
-    
-    h1{ margin:0 0 10px 0; font-size:24px; color:var(--light); text-transform:uppercase; letter-spacing:4px; text-shadow:0 0 8px var(--accent); }
-    h1 span{ font-size:12px; color:#666; vertical-align:middle; letter-spacing:1px; }
+    h1{ margin:0 0 10px 0; font-size:22px; color:var(--light); text-transform:uppercase; letter-spacing:3px; text-shadow:0 0 10px var(--accent); }
+    h1 span{ font-size:12px; color:#676776; vertical-align:middle; letter-spacing:1px; }
 
-    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-top:20px; }
+    .grid{ display:grid; grid-template-columns: 1.1fr 1fr; gap:18px; margin-top:14px; }
+    @media (max-width:860px){ .grid{grid-template-columns:1fr; } }
+
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+    label{font-size:12px; color:#6e6e7d; letter-spacing:0.05em; text-transform:uppercase;}
     input[type="text"]{
-      width:100%; box-sizing:border-box; background:#000; border:1px solid #444; color:white; padding:12px; font-family:inherit; outline:none;
+      width:100%; box-sizing:border-box; background:#000; border:1px solid #444; color:#fff; padding:12px;
+      font-family:inherit; outline:none; border-radius:10px;
     }
-    input[type="text"]:focus{ border-color:var(--accent); }
+    input[type="text"]:focus{ border-color:var(--accent); box-shadow: 0 0 0 3px #7d3cff22; }
 
     .btn{
-      background:#000; color:var(--light); border:1px solid #444; padding:10px 20px; 
-      font-family:inherit; font-weight:bold; cursor:pointer; text-transform:uppercase;
-      transition:0.2s;
+      background:#000; color:var(--light); border:1px solid #444; padding:10px 14px;
+      font-family:inherit; font-weight:800; cursor:pointer; text-transform:uppercase; letter-spacing:0.06em;
+      transition:0.18s;
+      border-radius: 12px;
     }
-    .btn:hover{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 0 15px var(--accent); }
-    .btn.secondary{ border-color:#333; color:#666; }
-    .btn.secondary:hover{ border-color:#666; background:#222; color:#fff; box-shadow:none; }
+    .btn:hover{ background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 0 16px #7d3cff66; transform: translateY(-1px); }
+    .btn.secondary{ border-color:#333; color:#777; }
+    .btn.secondary:hover{ border-color:#666; background:#1a1a1f; color:#fff; box-shadow:none; }
 
-    .help{ margin-top:15px; font-size:12px; color:#666; line-height:1.5; }
-    .kbd{ border:1px solid #444; padding:2px 6px; border-radius:4px; color:#fff; background:#222; }
+    .help{ margin-top:12px; font-size:12px; color:#777; line-height:1.55; }
+    .kbd{ border:1px solid #444; padding:2px 6px; border-radius:6px; color:#fff; background:#141417; font-weight:800; }
 
     .mono{
-      white-space:pre-wrap; font-size:14px; line-height:1.6; color:#ccc; 
-      border-left:2px solid var(--accent); padding-left:15px; margin-top:10px;
+      white-space:pre-wrap; font-size:13px; line-height:1.6; color:#ddd;
+      border-left:2px solid var(--accent); padding-left:14px; margin-top:10px;
     }
 
-    /* Avatars */
-    .avatars{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:5px; }
-    .avi{ 
-      border:1px solid #333; padding:10px; cursor:pointer; opacity:0.6; transition:0.2s;
-      display:flex; flex-direction:column; gap:4px;
+    .avatars{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:6px; }
+    .avi{
+      border:1px solid #333; padding:10px; cursor:pointer; opacity:0.65; transition:0.18s;
+      display:flex; flex-direction:column; gap:4px; border-radius:12px; background:#050509;
     }
-    .avi:hover{ opacity:1; border-color:#666; }
-    .avi.sel{ opacity:1; border-color:var(--accent); background:#1a1025; }
-    .avi b{ color:#fff; font-size:14px; }
-    .avi small{ font-size:11px; color:#888; }
+    .avi:hover{ opacity:1; border-color:#666; transform: translateY(-1px); }
+    .avi.sel{ opacity:1; border-color:var(--accent); background:#120a1e; box-shadow:0 0 0 3px #7d3cff22; }
+    .avi b{ color:#fff; font-size:13px; letter-spacing:0.03em; }
+    .avi small{ font-size:11px; color:#8b8b96; line-height:1.25; }
 
-    #ui_layer{ pointer-events:none; position:absolute; top:20px; left:20px; right:20px; display:flex; justify-content:space-between; z-index:15; mix-blend-mode:difference; }
-    .bar{ height:4px; width:100px; background:#333; margin-bottom:5px; position:relative; }
-    .fill{ height:100%; background:#fff; width:100%; transition:width 0.2s; }
-    .stat{ font-size:10px; color:#fff; font-weight:bold; text-transform:uppercase; letter-spacing:1px; }
+    /* HUD */
+    #ui_layer{
+      pointer-events:none; position:absolute; top:18px; left:18px; right:18px;
+      display:flex; justify-content:space-between; z-index:15;
+      mix-blend-mode:difference;
+      gap:10px;
+    }
+    .stat{ font-size:10px; color:#fff; font-weight:900; text-transform:uppercase; letter-spacing:1px; }
+    .bar{ height:5px; width:140px; background:#222; margin:6px 0 10px; position:relative; border:1px solid #333; border-radius:999px; overflow:hidden;}
+    .fill{ height:100%; width:100%; transition:width 0.12s linear; }
 
+    /* File picker */
+    .fileRow{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;}
+    .pill{
+      display:inline-flex; gap:8px; align-items:center;
+      border:1px solid #333; background:#07070c;
+      padding:8px 10px; border-radius:999px; color:#bbb; font-size:12px;
+    }
+    .dot{width:8px; height:8px; border-radius:50%; background:#555; box-shadow:0 0 10px #000;}
+    .dot.ok{background:var(--ok); box-shadow:0 0 12px #43ff9b55;}
+    .dot.warn{background:#ffb24a; box-shadow:0 0 12px #ffb24a55;}
+    .dot.bad{background:var(--danger); box-shadow:0 0 12px #ff2a2a55;}
   </style>
 </head>
 <body>
   <div id="wrap">
     <canvas id="game"></canvas>
-    <div id="crt"></div> <div id="ui_layer" style="display:none">
+    <div id="crt"></div>
+
+    <div id="ui_layer" style="display:none">
       <div>
         <div class="stat">Integrity</div>
         <div class="bar"><div id="ui_hp" class="fill" style="background:var(--danger)"></div></div>
+
         <div class="stat">Light / Sanity</div>
         <div class="bar"><div id="ui_san" class="fill" style="background:var(--accent)"></div></div>
+
+        <div class="stat" id="ui_weapon">Weapon: ???</div>
       </div>
+
       <div style="text-align:right">
-        <div class="stat" id="ui_score">DEPTH: 0m</div>
-        <div class="stat" style="color:#666" id="ui_tension">ATMOSPHERE</div>
+        <div class="stat" id="ui_depth">DEPTH: 0m</div>
+        <div class="stat" id="ui_mode" style="color:#777">ATMOSPHERE</div>
+        <div class="stat" id="ui_boss" style="color:#777"></div>
       </div>
     </div>
 
+    <!-- MENU -->
     <div id="menuOverlay" class="overlay">
       <div class="panel">
-        <h1>Lo-Fi Angels <span>// REBIRTH_PROTOCOL</span></h1>
+        <h1>LO-FI ANGELS <span>// REBIRTH_ARTIFACT_BUILD</span></h1>
         <div class="help">
-          An atmospheric horror run & gun. <br/>
-          The fog is thick. Your <b>Sanity</b> fuels your light. <br/>
-          <br/>
-          <span style="color:var(--danger)">WARNING:</span> Avoid the spectral shapes. Do not kill the <b>Daughter</b> (Green Ghost).
+          A run & gun inside a broken memory. Your <b>Sanity</b> powers perception.<br>
+          <span style="color:var(--danger)">WARNING:</span> Do not shoot <b>The Daughter</b> (green). That ends everything.
         </div>
 
         <div class="grid">
           <div>
-            <label style="font-size:12px; color:#666;">IDENTITY</label>
-            <input id="playerName" type="text" placeholder="ENTER NAME" value="SEEKER" maxlength="12" style="margin-top:5px;">
+            <label>Identity</label>
+            <input id="playerName" type="text" placeholder="ENTER NAME" value="SEEKER" maxlength="18" style="margin-top:6px;">
             <div class="help">
-              <span class="kbd">WASD</span> Move/Jump<br/>
-              <span class="kbd">MOUSE</span> Aim<br/>
-              <span class="kbd">CLICK</span> Fire<br/>
-              <span class="kbd">E</span> Interact
+              <span class="kbd">WASD</span> move/jump · <span class="kbd">Mouse</span> aim · <span class="kbd">Click</span> shoot · <span class="kbd">E</span> interact · <span class="kbd">Space</span> close notes<br>
+              Atmospheric mode has <b>0 spawns</b>. Crossing a threshold, opening a chest, or reading a note can wake the Angels.
+            </div>
+
+            <div class="fileRow">
+              <button id="uploadBtn" class="btn secondary" type="button">Load PNGs</button>
+              <input id="fileInput" type="file" accept="image/png" multiple style="display:none">
+              <span class="pill"><span id="assetDot" class="dot warn"></span><span id="assetStatus">Sprites: placeholders</span></span>
+            </div>
+            <div class="help">
+              You can either upload PNGs now (runtime), or put them in a repo folder like <b>assets/</b>:
+              <span style="color:#bbb">player.png, angel_walk.png, angel_fly.png, daughter.png, chest.png, boss_seraph.png, boss_choir.png, faces/face1.png…</span>
             </div>
           </div>
+
           <div>
-            <label style="font-size:12px; color:#666;">CLASS</label>
-            <div class="avatars">
-              <div class="avi sel" onclick="selectAvi(0, this)"><b>Vanguard</b><small>Balanced</small></div>
-              <div class="avi" onclick="selectAvi(1, this)"><b>Occultist</b><small>High Sanity</small></div>
-              <div class="avi" onclick="selectAvi(2, this)"><b>Heavy</b><small>High HP</small></div>
+            <label>Class</label>
+            <div class="avatars" style="margin-top:6px;">
+              <div class="avi sel" data-avi="0"><b>Vanguard</b><small>Rifle · steady fire · balanced</small></div>
+              <div class="avi" data-avi="1"><b>Occultist</b><small>Needle · piercing · higher sanity</small></div>
+              <div class="avi" data-avi="2"><b>Heavy</b><small>Scatter · close-range · higher HP</small></div>
             </div>
-            <button id="startBtn" class="btn" style="width:100%; margin-top:20px;">INITIATE</button>
+
+            <div class="row" style="margin-top:14px;">
+              <button id="startBtn" class="btn" style="width:100%">INITIATE</button>
+            </div>
+
+            <div class="help">
+              Procedural audio starts after INITIATE (browser gesture requirement). No external files.
+            </div>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- NOTE / LORE -->
     <div id="loreOverlay" class="overlay" style="display:none">
       <div class="panel">
-        <h1 style="font-size:18px; color:var(--accent)">ARCHIVE DATA</h1>
+        <h1 style="font-size:16px; color:var(--accent)">ARCHIVE FRAGMENT</h1>
         <div id="loreText" class="mono"></div>
-        <div style="margin-top:20px; text-align:right">
+        <div style="margin-top:16px; text-align:right">
           <button id="closeLoreBtn" class="btn secondary">CLOSE [SPACE]</button>
         </div>
       </div>
     </div>
 
+    <!-- GAME OVER -->
     <div id="overOverlay" class="overlay" style="display:none">
       <div class="panel" style="text-align:center">
         <h1 id="overTitle" style="color:var(--danger)">SIGNAL LOST</h1>
         <div id="overReason" class="mono" style="text-align:center; border:none;"></div>
-        <div style="margin-top:30px;">
-          <button onclick="location.reload()" class="btn">REBOOT SYSTEM</button>
+        <div style="margin-top:22px;">
+          <button id="retryBtn" class="btn">REBOOT RUN</button>
+          <button id="backBtn" class="btn secondary" style="margin-left:10px;">BACK TO MENU</button>
         </div>
       </div>
     </div>
-
   </div>
 
 <script>
-// --- ENGINE SETUP ---
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', { alpha: false }); // Optimize
-let width, height;
-const resize = () => {
-  width = canvas.width = window.innerWidth;
-  height = canvas.height = window.innerHeight;
-};
-window.addEventListener('resize', resize);
-resize();
+(() => {
+  "use strict";
 
-// --- CONFIG ---
-const GRAVITY = 700; 
-const GROUND_Y = () => height - 100;
-const PAL = {
-  bg: '#050505',
-  ground: '#0a0a0d',
-  obs: '#15151a',
-  player: '#e0e0e0',
-  playerDim: '#666',
-  enemy: '#ff2a2a',
-  daughter: '#00ffaa', // Distinct Green
-  daughterGlow: 'rgba(0,255,170,0.2)',
-  light: 'rgba(255, 240, 200, 0.08)',
-  tree: '#0d0d10'
-};
+  /*******************************************************************
+   * Notes on PNG usage
+   * - Repo files: put PNGs under ./assets/ and they’ll auto-attempt load.
+   * - Runtime upload: use "Load PNGs" and upload local files.
+   * Naming convention (recommended):
+   *   assets/player.png
+   *   assets/angel_walk.png
+   *   assets/angel_fly.png
+   *   assets/daughter.png
+   *   assets/chest.png
+   *   assets/note.png
+   *   assets/power_hp.png
+   *   assets/power_sanity.png
+   *   assets/power_down.png
+   *   assets/boss_seraph.png
+   *   assets/boss_choir.png
+   *   assets/faces/face1.png ... face4.png
+   *******************************************************************/
 
-// --- UTILS ---
-const rand = (min, max) => Math.random() * (max - min) + min;
-const randi = (min, max) => Math.floor(rand(min, max));
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const aabb = (r1, r2) => r1.x < r2.x + r2.w && r1.x + r1.w > r2.x && r1.y < r2.y + r2.h && r1.y + r1.h > r2.y;
+  /*********************
+   * Canvas + Low-res buffer
+   *********************/
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d", { alpha:false });
+  ctx.imageSmoothingEnabled = false;
 
-// --- AUDIO SYSTEM (Procedural) ---
-const Audio = {
-  ctx: null,
-  master: null,
-  start: function() {
-    if (this.ctx) return;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.3;
-    this.master.connect(this.ctx.destination);
-    this.drone();
-  },
-  drone: function() {
-    // Spooky background drone
-    const osc = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    osc.frequency.value = 55; // Low A
-    osc.type = 'sawtooth';
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 120;
-    
-    // LFO for drone wobble
-    const lfo = this.ctx.createOscillator();
-    lfo.frequency.value = 0.1;
-    const lfoG = this.ctx.createGain();
-    lfoG.gain.value = 50;
-    lfo.connect(lfoG);
-    lfoG.connect(filter.frequency);
-    lfo.start();
+  const buffer = document.createElement("canvas");
+  const bctx = buffer.getContext("2d", { alpha:false });
+  bctx.imageSmoothingEnabled = false;
 
-    osc.connect(filter).connect(g).connect(this.master);
-    g.gain.value = 0.5;
-    osc.start();
-  },
-  play: function(type) {
-    if(!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    osc.connect(g).connect(this.master);
-    
-    if (type === 'shoot') {
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(150, t);
-      osc.frequency.exponentialRampToValueAtTime(40, t + 0.1);
-      g.gain.setValueAtTime(0.2, t);
-      g.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-      osc.start(t); osc.stop(t + 0.1);
-    } else if (type === 'jump') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(200, t);
-      osc.frequency.linearRampToValueAtTime(100, t + 0.2);
-      g.gain.setValueAtTime(0.2, t);
-      g.gain.linearRampToValueAtTime(0.01, t + 0.2);
-      osc.start(t); osc.stop(t + 0.2);
-    } else if (type === 'hit') {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(100, t);
-      osc.frequency.exponentialRampToValueAtTime(10, t + 0.3);
-      g.gain.setValueAtTime(0.3, t);
-      g.gain.linearRampToValueAtTime(0.01, t + 0.3);
-      osc.start(t); osc.stop(t + 0.3);
+  let W=0,H=0, RW=320, RH=180;
+
+  function resize(){
+    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    W = canvas.width  = Math.max(1, (innerWidth * dpr)|0);
+    H = canvas.height = Math.max(1, (innerHeight * dpr)|0);
+
+    const aspect = innerWidth / Math.max(1, innerHeight);
+    RW = 320;
+    RH = Math.max(180, Math.floor(RW / Math.max(0.55, aspect)));
+
+    buffer.width = RW;
+    buffer.height= RH;
+
+    ctx.imageSmoothingEnabled = false;
+    bctx.imageSmoothingEnabled = false;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  /*********************
+   * Utils
+   *********************/
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const rand=(a=0,b=1)=>a+Math.random()*(b-a);
+  const randi=(a,b)=>(a+(Math.random()*(b-a+1)|0));
+  const chance=(p)=>Math.random()<p;
+
+  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+  function norm(x,y){
+    const l = Math.hypot(x,y) || 1;
+    return [x/l,y/l];
+  }
+
+  /*********************
+   * Input
+   *********************/
+  const Input = {
+    keys: new Set(),
+    mouse: {x:0,y:0,down:false},
+    invertMove:false,
+    lock(){},
+    down(code){ return this.keys.has(code); },
+    axisX(){
+      let x = (this.down("KeyD")?1:0) - (this.down("KeyA")?1:0);
+      return this.invertMove ? -x : x;
+    },
+    jump(){ return this.down("KeyW"); },
+    crouch(){ return this.down("KeyS"); },
+    interact(){ return this.down("KeyE"); },
+    consume(code){
+      if(this.down(code)){ this.keys.delete(code); return true; }
+      return false;
     }
-  }
-};
+  };
 
-// --- GAME CLASSES ---
+  window.addEventListener("keydown",(e)=>{
+    if(["KeyW","KeyA","KeyS","KeyD","KeyE","Space"].includes(e.code)) e.preventDefault();
+    Input.keys.add(e.code);
+  },{passive:false});
+  window.addEventListener("keyup",(e)=>Input.keys.delete(e.code));
 
-class Particle {
-  constructor(x, y, color, speed) {
-    this.x = x; this.y = y; this.color = color;
-    this.vx = rand(-speed, speed);
-    this.vy = rand(-speed, speed);
-    this.life = 1.0;
-    this.decay = rand(0.02, 0.05);
-  }
-  update() {
-    this.x += this.vx; this.y += this.vy;
-    this.life -= this.decay;
-  }
-  draw(ctx, camX) {
-    ctx.globalAlpha = this.life;
-    ctx.fillStyle = this.color;
-    ctx.fillRect(this.x - camX, this.y, 2, 2);
-    ctx.globalAlpha = 1;
-  }
-}
+  canvas.addEventListener("mousemove",(e)=>{
+    const r = canvas.getBoundingClientRect();
+    Input.mouse.x = (e.clientX - r.left) / r.width;
+    Input.mouse.y = (e.clientY - r.top) / r.height;
+  });
+  canvas.addEventListener("mousedown",()=>Input.mouse.down=true);
+  window.addEventListener("mouseup",()=>Input.mouse.down=false);
 
-class Entity {
-  constructor(x, y, w, h) {
-    this.x = x; this.y = y; this.w = w; this.h = h;
-    this.vx = 0; this.vy = 0;
-    this.grounded = false;
-    this.dead = false;
-  }
-  update(dt, world) {
-    this.vy += GRAVITY * dt;
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
+  /*********************
+   * Audio (procedural drone/noise + stingers)
+   *********************/
+  const AudioSys = {
+    ctx:null, master:null, filter:null, noiseGain:null, started:false,
+    osc1:null, osc2:null, lfo:null, lfoGain:null,
+    start(){
+      if(this.started) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.25;
+      this.master.connect(this.ctx.destination);
 
-    // Ground Collision
-    this.grounded = false;
-    if (this.y + this.h >= GROUND_Y()) {
-      this.y = GROUND_Y() - this.h;
-      this.vy = 0;
-      this.grounded = true;
+      this.filter = this.ctx.createBiquadFilter();
+      this.filter.type = "lowpass";
+      this.filter.frequency.value = 320;
+      this.filter.Q.value = 0.9;
+      this.filter.connect(this.master);
+
+      // Drone
+      this.osc1 = this.ctx.createOscillator();
+      this.osc2 = this.ctx.createOscillator();
+      this.osc1.type = "sawtooth";
+      this.osc2.type = "triangle";
+      this.osc1.frequency.value = 48;
+      this.osc2.frequency.value = 54;
+
+      const dg = this.ctx.createGain();
+      dg.gain.value = 0.10;
+      this.osc1.connect(dg);
+      this.osc2.connect(dg);
+      dg.connect(this.filter);
+
+      // Noise
+      const nlen = 2*this.ctx.sampleRate;
+      const buf = this.ctx.createBuffer(1, nlen, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for(let i=0;i<nlen;i++) data[i] = (Math.random()*2-1) * (0.6+0.4*Math.random());
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buf;
+      noise.loop = true;
+
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 140;
+
+      this.noiseGain = this.ctx.createGain();
+      this.noiseGain.gain.value = 0.03;
+
+      noise.connect(hp);
+      hp.connect(this.noiseGain);
+      this.noiseGain.connect(this.filter);
+
+      // LFO on filter cutoff (breathing dread)
+      this.lfo = this.ctx.createOscillator();
+      this.lfo.type = "sine";
+      this.lfo.frequency.value = 0.08;
+      this.lfoGain = this.ctx.createGain();
+      this.lfoGain.gain.value = 150;
+      this.lfo.connect(this.lfoGain);
+      this.lfoGain.connect(this.filter.frequency);
+
+      const t = this.ctx.currentTime;
+      this.osc1.start(t);
+      this.osc2.start(t);
+      noise.start(t);
+      this.lfo.start(t);
+
+      this.started = true;
+    },
+    setIntensity(v){
+      if(!this.started) return;
+      const t = this.ctx.currentTime;
+      const i = clamp(v,0,1);
+      this.master.gain.setTargetAtTime(0.18 + i*0.32, t, 0.12);
+      this.filter.frequency.setTargetAtTime(240 + i*1400, t, 0.14);
+      this.noiseGain.gain.setTargetAtTime(0.02 + i*0.16, t, 0.12);
+      this.osc1.detune.setTargetAtTime(-18 - i*55, t, 0.12);
+      this.osc2.detune.setTargetAtTime( 12 + i*75, t, 0.12);
+      this.lfo.frequency.setTargetAtTime(0.06 + i*0.9, t, 0.12);
+      this.lfoGain.gain.setTargetAtTime(120 + i*520, t, 0.12);
+    },
+    ping(type="shoot", amount=1){
+      if(!this.started) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.connect(g);
+      g.connect(this.master);
+      g.gain.value = 0.0001;
+
+      if(type==="shoot"){
+        o.type="square";
+        o.frequency.setValueAtTime(160, t);
+        o.frequency.exponentialRampToValueAtTime(48, t+0.10);
+        g.gain.setValueAtTime(0.14*amount, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.10);
+        o.start(t); o.stop(t+0.11);
+      }else if(type==="hit"){
+        o.type="sawtooth";
+        o.frequency.setValueAtTime(110, t);
+        o.frequency.exponentialRampToValueAtTime(14, t+0.22);
+        g.gain.setValueAtTime(0.20*amount, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.24);
+        o.start(t); o.stop(t+0.25);
+      }else if(type==="thump"){
+        o.type="sine";
+        o.frequency.setValueAtTime(120, t);
+        o.frequency.exponentialRampToValueAtTime(42, t+0.16);
+        g.gain.setValueAtTime(0.20*amount, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
+        o.start(t); o.stop(t+0.24);
+      }else if(type==="boss"){
+        o.type="triangle";
+        o.frequency.setValueAtTime(90, t);
+        o.frequency.exponentialRampToValueAtTime(22, t+0.35);
+        g.gain.setValueAtTime(0.28*amount, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t+0.45);
+        o.start(t); o.stop(t+0.48);
+      }
+    }
+  };
+
+  /*********************
+   * Asset Manager (repo PNGs + runtime upload)
+   *********************/
+  class Assets {
+    constructor(){
+      this.images = new Map(); // key -> HTMLImageElement
+      this.readyCount = 0;
+      this.failCount = 0;
+      this.totalAttempt = 0;
+
+      // default manifest (relative URLs)
+      this.manifest = {
+        player: "assets/player.png",
+        angel_walk: "assets/angel_walk.png",
+        angel_fly: "assets/angel_fly.png",
+        daughter: "assets/daughter.png",
+        chest: "assets/chest.png",
+        note: "assets/note.png",
+        power_hp: "assets/power_hp.png",
+        power_sanity: "assets/power_sanity.png",
+        power_down: "assets/power_down.png",
+        boss_seraph: "assets/boss_seraph.png",
+        boss_choir: "assets/boss_choir.png",
+        face1: "assets/faces/face1.png",
+        face2: "assets/faces/face2.png",
+        face3: "assets/faces/face3.png",
+        face4: "assets/faces/face4.png",
+      };
     }
 
-    // Object Collision
-    world.obstacles.forEach(o => {
-      if (aabb(this, o)) {
-        // Simple resolution: if we were above it, land on it. 
-        // If we hit side, stop.
-        const prevY = this.y - this.vy * dt;
-        if (prevY + this.h <= o.y) {
-          this.y = o.y - this.h;
-          this.vy = 0;
-          this.grounded = true;
-        } else {
-          // Hit side
-          this.x -= this.vx * dt;
-          this.vx = 0;
-        }
-      }
-    });
-  }
-}
+    get(key){ return this.images.get(key) || null; }
 
-class Player extends Entity {
-  constructor() {
-    super(200, 0, 16, 32);
-    this.speed = 180;
-    this.hp = 100;
-    this.sanity = 100;
-    this.maxHp = 100;
-    this.lantern = 150; // Radius
-    this.facing = 1;
-    this.cooldown = 0;
-  }
-  update(dt, input, world) {
-    // Horizontal
-    let dir = 0;
-    if (input.keys['KeyA']) dir = -1;
-    if (input.keys['KeyD']) dir = 1;
-    this.vx = dir * this.speed;
-    if (dir !== 0) this.facing = dir;
+    async tryLoadManifest(){
+      const keys = Object.keys(this.manifest);
+      this.totalAttempt = keys.length;
+      this.readyCount = 0;
+      this.failCount = 0;
 
-    // Jump
-    if (input.keys['KeyW'] && this.grounded) {
-      this.vy = -450; // Increased jump power
-      Audio.play('jump');
-      this.grounded = false;
+      await Promise.all(keys.map(k => this._loadOne(k, this.manifest[k], {silent:true})));
     }
 
-    super.update(dt, world);
-
-    // Shooting
-    if (this.cooldown > 0) this.cooldown -= dt;
-    if (input.mouse.down && this.cooldown <= 0) {
-      this.cooldown = 0.15;
-      Audio.play('shoot');
-      const mx = input.mouse.x + world.camX;
-      const my = input.mouse.y;
-      const angle = Math.atan2(my - (this.y + 10), mx - (this.x + 8));
-      world.bullets.push(new Bullet(this.x + 8, this.y + 10, angle));
-      // Shooting costs a tiny bit of sanity
-      this.sanity = Math.max(0, this.sanity - 0.5);
-    }
-
-    // Sanity Decay -> Lantern Dimming
-    this.sanity = Math.max(0, this.sanity - dt * 0.8);
-    // Lantern radius linked to sanity
-    this.lantern = 50 + (this.sanity / 100) * 200;
-    
-    // Bounds
-    if (this.x < world.camX) this.x = world.camX;
-  }
-
-  draw(ctx, camX) {
-    // Body (Not just a box anymore - layers)
-    let x = this.x - camX;
-    
-    // Scarf/Cape trail
-    ctx.fillStyle = '#ff3366';
-    ctx.fillRect(x + (this.facing === 1 ? -4 : 12), this.y + 8, 8, 4);
-
-    // Main Body
-    ctx.fillStyle = PAL.player;
-    ctx.fillRect(x, this.y, this.w, this.h);
-    
-    // Head/Goggles
-    ctx.fillStyle = '#222';
-    ctx.fillRect(x + 2, this.y + 2, 12, 8);
-    ctx.fillStyle = '#0ff'; // Glowing eye
-    ctx.fillRect(x + (this.facing === 1 ? 8 : 4), this.y + 4, 3, 2);
-
-    // Gun
-    ctx.fillStyle = '#555';
-    ctx.fillRect(x + (this.facing === 1 ? 10 : -6), this.y + 14, 12, 4);
-  }
-}
-
-class Daughter extends Entity {
-  constructor(x) {
-    super(x, 0, 14, 24);
-    this.timer = 0;
-    this.state = 'wander'; // wander, cower
-    this.cowerTime = 0;
-  }
-  update(dt, world) {
-    const p = world.player;
-    const distToPlayer = Math.abs(p.x - this.x);
-    
-    // AI Logic
-    if (this.state === 'cower') {
-      this.vx = 0;
-      this.h = 16; // Crouch
-      this.cowerTime -= dt;
-      if (this.cowerTime <= 0) {
-        this.state = 'wander';
-        this.h = 24;
-      }
-    } else {
-      // Wander logic
-      this.timer -= dt;
-      if (this.timer <= 0) {
-        this.vx = rand(-40, 40);
-        this.timer = rand(1, 3);
-      }
-      
-      // Run away from enemies slightly
-      let nearestEnemy = null;
-      let minDst = 150;
-      world.enemies.forEach(e => {
-        const d = Math.abs(e.x - this.x);
-        if(d < minDst) { minDst = d; nearestEnemy = e; }
-      });
-      
-      if (nearestEnemy) {
-        this.vx = (this.x < nearestEnemy.x ? -1 : 1) * 60;
-      }
-      
-      // If bullets are flying near, COWER
-      world.bullets.forEach(b => {
-        if (dist(b, this) < 80) {
-          this.state = 'cower';
-          this.cowerTime = 1.5;
-        }
+    async _loadOne(key, url, {silent=false}={}){
+      return new Promise((resolve)=>{
+        const img = new Image();
+        img.onload = () => { this.images.set(key,img); this.readyCount++; resolve(true); };
+        img.onerror = () => { this.failCount++; resolve(false); };
+        img.src = url;
       });
     }
 
-    super.update(dt, world);
-  }
-  draw(ctx, camX) {
-    const x = this.x - camX;
-    
-    // Glow
-    ctx.fillStyle = PAL.daughterGlow;
-    ctx.beginPath(); arc(ctx, x + 7, this.y + 12, 20); ctx.fill();
+    // Runtime upload: match by filename keywords
+    async loadFromFiles(fileList){
+      const files = Array.from(fileList || []);
+      for(const f of files){
+        if(!f.type || !f.type.includes("png")) continue;
+        const lower = (f.name || "").toLowerCase();
 
-    // Body (Ghostly)
-    ctx.fillStyle = PAL.daughter;
-    // Draw dress shape
-    ctx.beginPath();
-    ctx.moveTo(x + 7, this.y);
-    ctx.lineTo(x + 14, this.y + this.h);
-    ctx.lineTo(x, this.y + this.h);
-    ctx.fill();
-    
-    // Eyes
-    ctx.fillStyle = '#005522';
-    ctx.fillRect(x + 4, this.y + 6, 2, 2);
-    ctx.fillRect(x + 9, this.y + 6, 2, 2);
+        // heuristics to map to keys
+        const guessKey = (() => {
+          if(lower.includes("player")) return "player";
+          if(lower.includes("daughter")) return "daughter";
+          if(lower.includes("angel") && lower.includes("fly")) return "angel_fly";
+          if(lower.includes("angel")) return "angel_walk";
+          if(lower.includes("boss") && lower.includes("seraph")) return "boss_seraph";
+          if(lower.includes("boss") && (lower.includes("choir") || lower.includes("engine"))) return "boss_choir";
+          if(lower.includes("chest")) return "chest";
+          if(lower.includes("note")) return "note";
+          if(lower.includes("hp")) return "power_hp";
+          if(lower.includes("san")) return "power_sanity";
+          if(lower.includes("down")) return "power_down";
+          if(lower.includes("face1")) return "face1";
+          if(lower.includes("face2")) return "face2";
+          if(lower.includes("face3")) return "face3";
+          if(lower.includes("face4")) return "face4";
+          // fallback: treat unknown as face overlay if it contains "face"
+          if(lower.includes("face")) return "face1";
+          return null;
+        })();
 
-    if (this.state === 'cower') {
-      ctx.fillStyle = '#fff';
-      ctx.font = '10px monospace';
-      ctx.fillText("!", x+5, this.y - 5);
+        const key = guessKey;
+        if(!key) continue;
+
+        const dataUrl = await new Promise((resolve)=>{
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result);
+          fr.readAsDataURL(f);
+        });
+
+        await new Promise((resolve)=>{
+          const img = new Image();
+          img.onload = () => { this.images.set(key,img); resolve(true); };
+          img.onerror = () => resolve(false);
+          img.src = dataUrl;
+        });
+      }
     }
   }
-}
 
-class Enemy extends Entity {
-  constructor(x, y, type) {
-    super(x, y, 20, 30);
-    this.type = type; // 'walker' or 'flyer'
-    this.hp = 30;
-    if (type === 'flyer') {
-      this.w = 16; this.h = 16; this.hp = 15;
+  const assets = new Assets();
+
+  /*********************
+   * Palette + aesthetic knobs
+   *********************/
+  const PAL = {
+    bg:"#050505",
+    ground:"#0a0a0d",
+    obs:"#15151a",
+    fog:"#0b0b12",
+    outline:"#2a2a3a",
+    player:"#e8e8ef",
+    accent:"#7d3cff",
+    enemy:"#ff2a2a",
+    enemy2:"#ff7b7b",
+    daughter:"#00ffaa",
+    daughterGlow:"rgba(0,255,170,0.18)",
+    note:"#f3f3ff",
+    gold:"#ffb24a",
+    blood:"#6c0012"
+  };
+
+  /*********************
+   * FX / Particles
+   *********************/
+  class Particle{
+    constructor(x,y,kind){
+      this.x=x; this.y=y;
+      this.vx=rand(-90,90);
+      this.vy=rand(-160,40);
+      this.life=rand(0.18,0.9);
+      this.kind=kind; // "blood"|"spark"|"ash"
+      this.s=rand(1,3);
+    }
+    update(dt, world){
+      this.life -= dt;
+      this.vy += world.gravity*dt*0.55;
+      this.x += this.vx*dt;
+      this.y += this.vy*dt;
+      if(this.y > world.groundY){
+        this.y = world.groundY;
+        this.vx *= 0.35;
+        this.vy *= -0.18;
+      }
+    }
+    draw(ctx, cam){
+      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
+      if(this.kind==="blood") ctx.fillStyle = PAL.blood;
+      else if(this.kind==="spark") ctx.fillStyle = PAL.note;
+      else ctx.fillStyle = "#3a3a44";
+      ctx.fillRect(sx,sy,this.s,this.s);
     }
   }
-  update(dt, world) {
-    const p = world.player;
-    const dx = p.x - this.x;
-    const dy = p.y - this.y;
-    
-    if (this.type === 'walker') {
-      this.vx = (dx > 0 ? 1 : -1) * (rand(40, 70));
-      super.update(dt, world);
-      // Jump over obstacles
-      if (this.vx === 0 && this.grounded) this.vy = -350;
-    } else {
-      // Flyer - Sine wave movement towards player
-      this.x += (dx > 0 ? 1 : -1) * 90 * dt;
-      this.y += (dy > 0 ? 1 : -1) * 30 * dt + Math.sin(Date.now()/200)*2;
+
+  /*********************
+   * Sprite renderer (placeholder shapes + optional PNG + distortion)
+   *********************/
+  const off = document.createElement("canvas");
+  const offCtx = off.getContext("2d");
+
+  function drawGlitchSprite(ctx, img, x,y,w,h, opts){
+    // opts: {slice, jitter, alpha, smear, channel, burn}
+    const slice = opts.slice ?? 6;
+    const jitter = opts.jitter ?? 3;
+    const alpha = opts.alpha ?? 1;
+    const smear = opts.smear ?? 0;
+    const channel = opts.channel ?? 0;
+    const burn = opts.burn ?? 0;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // base draw
+    ctx.drawImage(img, x,y,w,h);
+
+    // slice glitch
+    if(slice > 0){
+      const slices = Math.min(18, Math.max(2, slice));
+      const sh = h / slices;
+      for(let i=0;i<slices;i++){
+        const sy = y + i*sh;
+        const dx = (Math.sin((performance.now()*0.003) + i*2.2) * jitter) | 0;
+        const dy = (Math.cos((performance.now()*0.002) + i*1.7) * (jitter*0.35)) | 0;
+        ctx.drawImage(img, x, sy, w, sh, x+dx, sy+dy, w, sh);
+      }
     }
 
-    // Hit Player
-    if (aabb(this, p)) {
-      p.hp -= 0.5;
-      p.sanity -= 0.2;
-      world.particles.push(new Particle(p.x, p.y, '#f00', 5));
+    // channel shift (fake RGB offset)
+    if(channel > 0){
+      const dx = ((Math.sin(performance.now()*0.01)*channel)|0);
+      const dy = ((Math.cos(performance.now()*0.008)*channel)|0);
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = 0.35*alpha;
+      ctx.drawImage(img, x+dx, y, w, h);
+      ctx.drawImage(img, x-dx, y+dy, w, h);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = alpha;
     }
+
+    // smear (drag)
+    if(smear > 0){
+      ctx.globalAlpha = 0.12*alpha;
+      for(let i=0;i<smear;i++){
+        ctx.drawImage(img, x - i*2, y + (i%2), w, h);
+      }
+      ctx.globalAlpha = alpha;
+    }
+
+    // memory burn (inverted stamp)
+    if(burn > 0){
+      ctx.globalCompositeOperation = "difference";
+      ctx.globalAlpha = 0.12*burn*alpha;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x,y,w,h);
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = alpha;
+    }
+
+    ctx.restore();
   }
-  draw(ctx, camX) {
-    const x = this.x - camX;
-    ctx.fillStyle = PAL.enemy;
-    
-    if (this.type === 'walker') {
-      // Glitchy shape
-      ctx.fillRect(x, this.y, this.w, this.h);
-      // Spikes
+
+  function drawPlaceholderEntity(ctx, kind, x,y,w,h, facing=1, mood=0){
+    // Creepy layered primitives: outlines, “organs”, spikes, eyes, trails.
+    // mood affects jitter and accent.
+    const j = mood>0 ? ((Math.sin(performance.now()*0.02 + x*0.1)*mood)|0) : 0;
+
+    // outline
+    ctx.fillStyle = PAL.outline;
+    ctx.fillRect((x-1)|0,(y-1)|0,(w+2)|0,(h+2)|0);
+
+    if(kind==="player"){
+      // coat + head
+      ctx.fillStyle = PAL.player;
+      ctx.fillRect((x+j)|0,(y)|0,w,h);
+
+      // scarf trail
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = "#ff3366";
+      ctx.fillRect((x + (facing>0?-4:w-4) + j)|0, (y+8)|0, 8, 4);
+      ctx.globalAlpha = 1;
+
+      // face plate
+      ctx.fillStyle = "#141417";
+      ctx.fillRect((x+2+j)|0,(y+2)|0, w-4, 7);
+
+      // eye
+      ctx.fillStyle = PAL.accent;
+      ctx.fillRect((x + (facing>0 ? w-6 : 3) + j)|0, (y+4)|0, 2, 2);
+
+      // weapon stub
+      ctx.fillStyle = "#585867";
+      ctx.fillRect((x + (facing>0 ? w : -6) + j)|0, (y+12)|0, 10, 3);
+    }
+    else if(kind==="angel"){
+      // body
+      ctx.fillStyle = PAL.enemy;
+      ctx.fillRect((x+j)|0, (y)|0, w, h);
+
+      // wounds (organs)
+      ctx.fillStyle = PAL.enemy2;
+      ctx.fillRect((x+3+j)|0, (y+5)|0, 2, 2);
+      ctx.fillRect((x+w-6+j)|0, (y+7)|0, 2, 1);
+
+      // spikes / wings
+      ctx.strokeStyle = PAL.enemy2;
       ctx.beginPath();
-      ctx.moveTo(x, this.y); ctx.lineTo(x-5, this.y-5); ctx.lineTo(x+5, this.y);
+      ctx.moveTo(x-3, y+4); ctx.lineTo(x+2, y+7);
+      ctx.moveTo(x+w+3, y+4); ctx.lineTo(x+w-2, y+7);
+      ctx.moveTo(x+w/2, y-3); ctx.lineTo(x+w/2, y+2);
       ctx.stroke();
-    } else {
-      // Flyer shape (Triangle)
+
+      // slit eye
+      ctx.fillStyle = PAL.note;
+      ctx.fillRect((x+w/2-1+j)|0, (y+6)|0, 2, 1);
+    }
+    else if(kind==="daughter"){
+      // glow
+      ctx.globalAlpha = 0.20;
+      ctx.fillStyle = PAL.daughter;
+      ctx.fillRect((x-2)|0, (y-2)|0, (w+4)|0, (h+4)|0);
+      ctx.globalAlpha = 1;
+
+      // body (dress triangle)
+      ctx.fillStyle = PAL.daughter;
       ctx.beginPath();
-      ctx.moveTo(x, this.y); 
-      ctx.lineTo(x+this.w, this.y); 
-      ctx.lineTo(x+this.w/2, this.y+this.h);
+      ctx.moveTo((x+w/2)|0, (y)|0);
+      ctx.lineTo((x+w)|0, (y+h)|0);
+      ctx.lineTo((x)|0, (y+h)|0);
+      ctx.closePath();
       ctx.fill();
-      // Wings
-      ctx.fillStyle = 'rgba(255,50,50,0.5)';
-      const flap = Math.sin(Date.now()/50) * 10;
-      ctx.fillRect(x - 10, this.y, 10, 5 + flap);
-      ctx.fillRect(x + this.w, this.y, 10, 5 + flap);
+
+      // eyes
+      ctx.fillStyle = "#003a22";
+      ctx.fillRect((x+3)|0, (y+6)|0, 2, 2);
+      ctx.fillRect((x+w-5)|0, (y+6)|0, 2, 2);
+    }
+    else if(kind==="chest"){
+      ctx.fillStyle = "#141417";
+      ctx.fillRect((x)|0, (y+3)|0, w, h-3);
+      ctx.fillStyle = PAL.gold;
+      ctx.fillRect((x+2)|0, (y+6)|0, w-4, 2);
+      ctx.fillStyle = PAL.outline;
+      ctx.fillRect((x+ w/2 -1)|0, (y+7)|0, 2, 3);
+      // lid
+      ctx.fillStyle = "#0d0d12";
+      ctx.fillRect((x+1)|0, (y)|0, w-2, 5);
+    }
+    else if(kind==="note"){
+      ctx.fillStyle = PAL.note;
+      ctx.fillRect((x)|0,(y)|0,w,h);
+      ctx.fillStyle = PAL.outline;
+      ctx.fillRect((x+w-2)|0, (y+1)|0, 1, 2);
+    }
+    else if(kind==="boss_seraph"){
+      // tall figure with “surgical halo”
+      ctx.fillStyle = PAL.outline;
+      ctx.fillRect(x-2,y-2,w+4,h+4);
+      ctx.fillStyle = "#1b141c";
+      ctx.fillRect(x,y,w,h);
+
+      // halo blades
+      ctx.strokeStyle = PAL.accent;
+      ctx.beginPath();
+      for(let i=0;i<8;i++){
+        const a = i*(Math.PI*2/8) + performance.now()*0.001;
+        const cx=x+w/2, cy=y+10;
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a)*14, cy + Math.sin(a)*10);
+      }
+      ctx.stroke();
+
+      // “face” slit
+      ctx.fillStyle = PAL.note;
+      ctx.fillRect((x+w/2-2)|0, (y+12)|0, 4, 1);
+
+      // chest cavity
+      ctx.fillStyle = PAL.enemy;
+      ctx.fillRect((x+w/2-3)|0, (y+18)|0, 6, 8);
+    }
+    else if(kind==="boss_choir"){
+      // floating machine-choir: core + dangling tongues
+      ctx.fillStyle = PAL.outline;
+      ctx.fillRect(x-2,y-2,w+4,h+4);
+      ctx.fillStyle = "#0f1118";
+      ctx.fillRect(x,y,w,h);
+
+      // core
+      ctx.fillStyle = PAL.accent;
+      ctx.fillRect((x+w/2-3)|0, (y+h/2-3)|0, 6, 6);
+
+      // speakers / mouths
+      ctx.fillStyle = PAL.enemy;
+      ctx.fillRect(x+3, y+3, 4, 4);
+      ctx.fillRect(x+w-7, y+3, 4, 4);
+
+      // dangling “wires”
+      ctx.strokeStyle = "#3a3a55";
+      ctx.beginPath();
+      ctx.moveTo(x+w/2, y+h); ctx.lineTo(x+w/2-6, y+h+10);
+      ctx.moveTo(x+w/2, y+h); ctx.lineTo(x+w/2+6, y+h+10);
+      ctx.stroke();
     }
   }
-}
 
-class Bullet {
-  constructor(x, y, ang) {
-    this.x = x; this.y = y; this.vx = Math.cos(ang)*600; this.vy = Math.sin(ang)*600;
-    this.dead = false; this.w=4; this.h=4;
+  /*********************
+   * Lore + in-game messages
+   *********************/
+  const LORE_BANK = [
+    {
+      base:
+`{NAME}, the corridor is not a place.
+It is a decision replaying itself.
+
+If the green child appears:
+lower the weapon. Breathe.`,
+      tone:[
+        `Vanguard log: keep your muzzle discipline, {NAME}.`,
+        `Occultist note: she is an anchor, {NAME}. Don’t cut the rope.`,
+        `Heavy directive: restraint is heavier than steel, {NAME}.`
+      ]
+    },
+    {
+      base:
+`A chest is a mouth that learned to lie.
+Sometimes it feeds you.
+Sometimes it learns you.`,
+      tone:[
+        `{NAME}, do not trust rewards.`,
+        `{NAME}, do not trust relief.`,
+        `{NAME}, do not trust yourself.`
+      ]
+    },
+    {
+      base:
+`Boss file: SERAPH-CLINICIAN.
+Trait: “Fixation on symmetry.”
+Weapon: “Suture line.” It stitches you to bad positions.`,
+      tone:[
+        `If it draws a line, don’t stand on it, {NAME}.`,
+        `If it hums, it’s choosing you, {NAME}.`,
+        `Break its rhythm. Don’t let it finish you, {NAME}.`
+      ]
+    },
+    {
+      base:
+`Boss file: CHOIR-ENGINE.
+Trait: “Craves witness.”
+Weapon: “Chorus burst.” It fires where you look.`,
+      tone:[
+        `{NAME}, avert your gaze when it sings.`,
+        `{NAME}, don’t listen to patterns.`,
+        `{NAME}, silence it with noise.`
+      ]
+    }
+  ];
+
+  function formatLore(id, name, avi){
+    const L = LORE_BANK[id % LORE_BANK.length];
+    return (L.base + "\n\n—\n" + (L.tone[avi]||"")).replaceAll("{NAME}", name);
   }
-  update(dt, world) {
-    this.x += this.vx * dt; this.y += this.vy * dt;
-    if (this.y > height || this.x > world.player.x + width) this.dead = true;
-    
-    // Hit Enemy
-    world.enemies.forEach(e => {
-      if (aabb(this, e)) {
-        this.dead = true;
-        e.hp -= 10;
-        Audio.play('hit');
-        if (e.hp <= 0) {
-          e.dead = true;
-          // Spawn HP or Sanity
-          if (Math.random() > 0.7) world.pickups.push({x:e.x, y:e.y, type: Math.random()>0.5?'hp':'san'});
+
+  const Whisper = {
+    list: [],
+    push(text, t=2.0){
+      this.list.push({text, t});
+      if(this.list.length > 4) this.list.shift();
+    },
+    update(dt){
+      for(const w of this.list) w.t -= dt;
+      this.list = this.list.filter(w => w.t > 0);
+    }
+  };
+
+  /*********************
+   * World / Level
+   *********************/
+  class World {
+    constructor(){
+      this.gravity = 700;
+      this.groundY = 140;
+      this.cam = {x:0,y:0};
+      this.obstacles = [];
+      this.decor = [];
+      this.thresholdX = 980;
+      this.reset();
+    }
+
+    reset(){
+      this.cam.x=0; this.cam.y=0;
+      this.obstacles.length=0;
+      this.decor.length=0;
+
+      let x=380;
+      for(let i=0;i<180;i++){
+        // obstacles (kept jumpable)
+        if(chance(0.38)){
+          const h=randi(18,55);
+          const w=randi(26,85);
+          const y=this.groundY - h;
+          this.obstacles.push({x,y,w,h});
         }
-        world.addParticles(this.x, this.y, '#fff', 5);
-      }
-    });
 
-    // Hit Daughter (BAD)
-    world.daughters.forEach(d => {
-      if(aabb(this, d)) {
-        gameOver('YOU KILLED THE CHILD.\nTHE CYCLE IS BROKEN.\nHOPE IS GONE.');
-      }
-    });
-    
-    // Hit Obstacle
-    world.obstacles.forEach(o => {
-      if (aabb(this, o)) { this.dead = true; world.addParticles(this.x, this.y, '#888', 3); }
-    });
-  }
-  draw(ctx, camX) {
-    ctx.fillStyle = '#ffff00';
-    ctx.fillRect(this.x - camX, this.y, 4, 4);
-  }
-}
+        // decorative silhouettes
+        if(chance(0.22)){
+          const t = chance(0.65) ? "tree" : (chance(0.6)?"grave":"house");
+          this.decor.push({x: x + rand(-60,60), type:t, s:rand(0.75,1.35)});
+        }
 
-class Decoration {
-  constructor(x, type) {
-    this.x = x;
-    this.type = type; // tree, grave, house
-    this.scale = rand(0.8, 1.2);
-  }
-  draw(ctx, camX) {
-    const x = this.x - camX;
-    if (x < -200 || x > width + 200) return;
-    
-    ctx.fillStyle = '#0f0f14';
-    const y = GROUND_Y();
-    
-    if (this.type === 'tree') {
-      // Draw Dead Tree using lines
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 5*this.scale, y - 100*this.scale);
-      ctx.lineTo(x - 20*this.scale, y - 140*this.scale); // branch left
-      ctx.moveTo(x + 5*this.scale, y - 100*this.scale);
-      ctx.lineTo(x + 30*this.scale, y - 150*this.scale); // branch right
-      ctx.lineWidth = 4 * this.scale;
-      ctx.strokeStyle = '#111';
-      ctx.stroke();
+        x += rand(90, 210);
+      }
+    }
+
+    collide(body){
+      body.grounded = false;
+
+      // ground
+      if(body.y + body.h >= this.groundY){
+        body.y = this.groundY - body.h;
+        body.vy = 0;
+        body.grounded = true;
+      }
+
+      // obstacles
+      for(const o of this.obstacles){
+        if(!aabb(body.x,body.y,body.w,body.h, o.x,o.y,o.w,o.h)) continue;
+
+        const prevY = body.y - body.vy*(1/60);
+        // land from above
+        if(prevY + body.h <= o.y + 2){
+          body.y = o.y - body.h;
+          body.vy = 0;
+          body.grounded = true;
+        }else{
+          // side bump
+          if(body.x + body.w/2 < o.x + o.w/2) body.x = o.x - body.w;
+          else body.x = o.x + o.w;
+          body.vx = 0;
+        }
+      }
+    }
+
+    draw(ctx, t){
+      // sky
+      ctx.fillStyle = PAL.bg;
+      ctx.fillRect(0,0,ctx.canvas.width,ctx.canvas.height);
+
+      // parallax decor (far)
+      for(const d of this.decor){
+        const sx = (d.x - this.cam.x*0.55)|0;
+        if(sx < -250 || sx > ctx.canvas.width+250) continue;
+        this.drawDecor(ctx, d, sx);
+      }
+
+      // fog bands
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = PAL.fog;
+      for(let i=0;i<7;i++){
+        const yy = 12 + i*18 + Math.sin(t*0.8 + i + this.cam.x*0.003)*2;
+        ctx.fillRect(0, yy, ctx.canvas.width, 10);
+      }
+      ctx.globalAlpha = 1;
+
+      // ground
+      ctx.fillStyle = PAL.ground;
+      ctx.fillRect(0, this.groundY - this.cam.y, ctx.canvas.width, ctx.canvas.height);
+
+      // obstacles
+      ctx.fillStyle = PAL.obs;
+      for(const o of this.obstacles){
+        const sx=(o.x-this.cam.x)|0;
+        if(sx+o.w < -60 || sx > ctx.canvas.width+60) continue;
+        ctx.fillRect(sx, o.y, o.w, o.h);
+        ctx.strokeStyle = "#0c0c10";
+        ctx.strokeRect(sx+0.5,o.y+0.5,o.w-1,o.h-1);
+      }
+
+      // threshold marker
+      const tx = (this.thresholdX - this.cam.x)|0;
+      if(tx > -80 && tx < ctx.canvas.width+80){
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = PAL.accent;
+        for(let i=0;i<6;i++){
+          const y0 = this.groundY - 80 + i*14;
+          ctx.beginPath();
+          ctx.moveTo(tx, y0);
+          ctx.lineTo(tx + (i%2?10:-10), y0+10);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    drawDecor(ctx, d, sx){
+      const y=this.groundY;
+      ctx.strokeStyle = "#0b0b10";
+      ctx.fillStyle = "#0b0b10";
+      ctx.lineWidth = 2;
+
+      if(d.type==="tree"){
+        ctx.beginPath();
+        ctx.moveTo(sx, y);
+        ctx.lineTo(sx + 5*d.s, y - 95*d.s);
+        ctx.lineTo(sx - 18*d.s, y - 130*d.s);
+        ctx.moveTo(sx + 5*d.s, y - 95*d.s);
+        ctx.lineTo(sx + 28*d.s, y - 140*d.s);
+        ctx.stroke();
+      }else if(d.type==="house"){
+        ctx.fillRect(sx, y-70*d.s, 76*d.s, 70*d.s);
+        ctx.beginPath();
+        ctx.moveTo(sx-8, y-70*d.s);
+        ctx.lineTo(sx+38*d.s, y-118*d.s);
+        ctx.lineTo(sx+84*d.s, y-70*d.s);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#000";
+        ctx.fillRect(sx+10*d.s, y-44*d.s, 18*d.s, 26*d.s);
+      }else{
+        // grave
+        ctx.beginPath();
+        ctx.arc(sx, y-18, 14*d.s, Math.PI, 0);
+        ctx.lineTo(sx+14*d.s, y);
+        ctx.lineTo(sx-14*d.s, y);
+        ctx.closePath();
+        ctx.fill();
+      }
+
       ctx.lineWidth = 1;
-    } else if (this.type === 'house') {
-      // Abandoned House
-      ctx.fillStyle = '#08080a';
-      ctx.fillRect(x, y - 80*this.scale, 80*this.scale, 80*this.scale);
-      // Roof
+    }
+  }
+
+  /*********************
+   * Entities
+   *********************/
+  class Entity{
+    constructor(x,y,w,h){
+      this.x=x; this.y=y; this.w=w; this.h=h;
+      this.vx=0; this.vy=0;
+      this.dead=false;
+      this.grounded=false;
+    }
+    get cx(){ return this.x + this.w/2; }
+    get cy(){ return this.y + this.h/2; }
+  }
+
+  class Player extends Entity{
+    constructor(name, avi){
+      super(200, 0, 16, 32);
+      this.name=name;
+      this.avi=avi|0;
+
+      this.hpMax=100; this.hp=100;
+      this.sanMax=100; this.san=100;
+
+      this.speed=180;
+      this.jump=-450;
+
+      this.facing=1;
+      this.cool=0;
+
+      // weapon config
+      if(this.avi===0){
+        this.weapon = {name:"RIFLE", rate:0.12, bullets:1, spread:0.02, pierce:0, dmg:10, kick:0.15};
+      }else if(this.avi===1){
+        this.sanMax=140; this.san=140;
+        this.weapon = {name:"NEEDLE", rate:0.16, bullets:1, spread:0.01, pierce:2, dmg:8, kick:0.08};
+      }else{
+        this.hpMax=160; this.hp=160;
+        this.weapon = {name:"SCATTER", rate:0.26, bullets:5, spread:0.18, pierce:0, dmg:6, kick:0.22};
+      }
+
+      this.lantern = 160;
+      this.crouching=false;
+
+      // debuffs
+      this.fireJam = 0;     // slows fire
+      this.aimShiver = 0;   // adds aim drift
+      this.hurtT = 0;
+
+      this.killCount=0;
+    }
+
+    hurt(dmg){
+      this.hp = clamp(this.hp-dmg, 0, this.hpMax);
+      this.san = clamp(this.san - dmg*0.35, 0, this.sanMax);
+      this.hurtT = 0.22;
+    }
+
+    heal(a){ this.hp = clamp(this.hp+a,0,this.hpMax); }
+    soothe(a){ this.san = clamp(this.san+a,0,this.sanMax); }
+
+    update(dt, world, game){
+      this.crouching = Input.crouch();
+      this.h = this.crouching ? 24 : 32;
+
+      let dir = Input.axisX();
+      this.vx = dir * this.speed;
+      if(dir!==0) this.facing = dir>0?1:-1;
+
+      // jump
+      if(Input.jump() && this.grounded && !this.crouching){
+        this.vy = this.jump;
+        this.grounded=false;
+        AudioSys.ping("thump", 0.65);
+      }
+
+      // gravity
+      this.vy += world.gravity*dt;
+
+      // integrate
+      this.x += this.vx*dt;
+      this.y += this.vy*dt;
+      world.collide(this);
+
+      // keep inside camera left
+      if(this.x < world.cam.x) this.x = world.cam.x;
+
+      // sanity decay + lantern link
+      const stress = (game.tension.mode==="frenetic"? 1.0 : 0.22) + (game.boss ? 0.6 : 0);
+      this.san = clamp(this.san - dt*(0.75 + stress*0.9), 0, this.sanMax);
+      this.lantern = 60 + (this.san/this.sanMax) * 220;
+
+      // cooldown
+      this.cool = Math.max(0, this.cool - dt);
+
+      // debuffs decay
+      this.fireJam = Math.max(0, this.fireJam - dt);
+      this.aimShiver = Math.max(0, this.aimShiver - dt);
+      this.hurtT = Math.max(0, this.hurtT - dt);
+
+      // shoot
+      const jamMul = this.fireJam > 0 ? 1.8 : 1;
+      const rate = this.weapon.rate * jamMul;
+
+      if(Input.mouse.down && this.cool<=0){
+        this.cool = rate;
+        game.shootFromPlayer(this);
+      }
+    }
+
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      // if PNG exists, render with mild distortion
+      const img = assets.get("player");
+      if(img){
+        const mood = (1 - this.san/this.sanMax);
+        drawGlitchSprite(ctx, img, sx-4, sy-6, 24, 40, {
+          slice: 4 + (mood*6)|0,
+          jitter: 2 + (mood*4),
+          channel: (mood*3)|0,
+          smear: (this.hurtT>0)? 2 : 0,
+          burn: mood*0.9,
+          alpha: 1
+        });
+      }else{
+        const mood = (1 - this.san/this.sanMax) * 4;
+        drawPlaceholderEntity(ctx, "player", sx, sy, this.w, this.h, this.facing, mood);
+      }
+    }
+  }
+
+  class Bullet extends Entity{
+    constructor(x,y,vx,vy, dmg, pierce, from="player"){
+      super(x,y,4,4);
+      this.vx=vx; this.vy=vy;
+      this.life=1.1;
+      this.dmg=dmg;
+      this.pierce=pierce|0;
+      this.from=from;
+      this.hitSet = new Set();
+    }
+    update(dt, world, game){
+      this.life -= dt;
+      if(this.life<=0){ this.dead=true; return; }
+      this.x += this.vx*dt;
+      this.y += this.vy*dt;
+
+      // world collision
+      if(this.y > RH || this.y < -40) { this.dead=true; return; }
+      if(this.y + this.h > world.groundY){ this.dead=true; game.spawnFx(this.x,this.y,"spark",6); return; }
+      for(const o of world.obstacles){
+        if(aabb(this.x,this.y,this.w,this.h, o.x,o.y,o.w,o.h)){
+          this.dead=true; game.spawnFx(this.x,this.y,"spark",6);
+          return;
+        }
+      }
+    }
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+      ctx.fillStyle = "#ffe66a";
+      ctx.fillRect(sx,sy,2,2);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(sx+1,sy+1,1,1);
+    }
+  }
+
+  class Angel extends Entity{
+    constructor(x,y,type){
+      super(x,y, type==="fly"? 18:20, type==="fly"? 18:30);
+      this.type=type; // "walk"|"fly"
+      this.hp = (type==="fly")? 18 : 34;
+      this.touch = (type==="fly")? 10 : 14;
+      this.wob=rand(0,6.28);
+      this.cool=rand(0,0.7);
+
+      // “psychological trait”
+      this.trait = chance(0.5) ? "mimic" : "stare";
+      this.stareT = 0;
+    }
+
+    update(dt, world, game){
+      const p = game.player;
+      if(!p) return;
+
+      this.cool = Math.max(0, this.cool - dt);
+
+      const dx = p.cx - this.cx;
+      const dy = p.cy - this.cy;
+
+      if(this.type==="fly"){
+        // flyer “stare” trait: sometimes stops and aims at where you’re aiming
+        if(this.trait==="stare"){
+          this.stareT -= dt;
+          if(this.stareT <= 0 && chance(0.012)){
+            this.stareT = rand(0.6, 1.2);
+          }
+          if(this.stareT > 0){
+            this.vx *= 0.90;
+            this.vy *= 0.90;
+          }else{
+            const [nx,ny] = norm(dx, dy + Math.sin(game.time*2 + this.wob)*8);
+            const sp = 92 + (game.tension.heat*30);
+            this.vx = nx*sp;
+            this.vy = ny*sp;
+          }
+        }else{
+          const [nx,ny] = norm(dx, dy + Math.sin(game.time*2 + this.wob)*8);
+          const sp = 92 + (game.tension.heat*30);
+          this.vx = nx*sp;
+          this.vy = ny*sp;
+        }
+
+        this.x += this.vx*dt;
+        this.y += this.vy*dt;
+        this.y = Math.min(this.y, world.groundY - 30);
+      }else{
+        // walker “mimic” trait: sometimes matches player pace then lunges
+        const dir = dx>0?1:-1;
+        const base = 70 + game.tension.heat*40;
+        const mimic = (this.trait==="mimic" && Math.abs(dx) < 160) ? (Math.abs(p.vx)*0.4) : 0;
+        this.vx = dir*(base + mimic);
+
+        this.vy += world.gravity*dt;
+        this.x += this.vx*dt;
+        this.y += this.vy*dt;
+        world.collide(this);
+
+        // hop over obstacles if stuck
+        if(this.grounded && Math.abs(dx)<120 && chance(0.02) && this.cool<=0){
+          this.vy = -rand(260, 360);
+          this.cool = rand(0.5, 1.0);
+        }
+      }
+
+      // contact damage
+      if(aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h)){
+        if(this.cool<=0){
+          p.hurt(this.touch);
+          this.cool = 0.8;
+          game.spawnFx(p.cx,p.cy,"blood",10);
+          AudioSys.ping("hit", 0.9);
+          if(chance(0.12)) Whisper.push("IT LEARNS YOUR WEIGHT.", 2.0);
+        }
+      }
+
+      // cull behind
+      if(this.x < world.cam.x - 220) this.dead = true;
+    }
+
+    hit(dmg, game){
+      this.hp -= dmg;
+      game.spawnFx(this.cx,this.cy,"blood",8);
+      if(this.hp <= 0){
+        this.dead = true;
+        game.player.killCount++;
+        game.spawnFx(this.cx,this.cy,"ash",12);
+
+        // drop chance: powerups/powerdowns/chest shards
+        const roll = Math.random();
+        if(roll < 0.16) game.spawnPickup(this.cx, this.cy, "hp");
+        else if(roll < 0.28) game.spawnPickup(this.cx, this.cy, "sanity");
+        else if(roll < 0.36) game.spawnPickup(this.cx, this.cy, "down");
+      }
+    }
+
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const key = (this.type==="fly") ? "angel_fly" : "angel_walk";
+      const img = assets.get(key);
+
+      const mood = clamp(game.tension.heat + (1 - game.player.san/game.player.sanMax), 0, 1);
+
+      if(img){
+        drawGlitchSprite(ctx, img, sx-4, sy-6, this.w+10, this.h+12, {
+          slice: 6 + (mood*8)|0,
+          jitter: 2 + (mood*6),
+          channel: (mood*4)|0,
+          smear: (this.type==="fly") ? 1 : 2,
+          burn: mood*0.6,
+          alpha: 1
+        });
+      }else{
+        drawPlaceholderEntity(ctx, "angel", sx, sy, this.w, this.h, 1, mood*4);
+      }
+    }
+  }
+
+  class Daughter extends Entity{
+    constructor(x){
+      super(x, 0, 14, 24);
+      this.x = x;
+      this.vx = rand(-40,40);
+      this.timer = rand(0.6,1.6);
+      this.state = "wander"; // wander|cower
+      this.cowerT = 0;
+    }
+    update(dt, world, game){
+      const p = game.player;
+
+      // AI: cower if bullets or enemies close
+      if(this.state==="cower"){
+        this.vx = 0;
+        this.cowerT -= dt;
+        if(this.cowerT <= 0){
+          this.state="wander";
+        }
+      }else{
+        this.timer -= dt;
+        if(this.timer <= 0){
+          this.vx = rand(-45,45);
+          this.timer = rand(0.9,2.0);
+          if(chance(0.35)) this.vx *= 0.2;
+        }
+
+        let nearest = 9999;
+        for(const e of game.enemies){
+          const d = Math.abs(e.x - this.x);
+          if(d < nearest) nearest = d;
+        }
+        if(nearest < 140){
+          this.vx = (this.x < p.x ? -1 : 1) * 70;
+        }
+
+        for(const b of game.bullets){
+          const d = Math.hypot(b.x-this.x, b.y-this.y);
+          if(d < 80){
+            this.state="cower";
+            this.cowerT = 1.4;
+            break;
+          }
+        }
+      }
+
+      // physics
+      this.vy += world.gravity*dt;
+      this.x += this.vx*dt;
+      this.y += this.vy*dt;
+      world.collide(this);
+
+      // keep within camera region
+      const left = world.cam.x + 16;
+      const right = world.cam.x + RW - 32;
+      if(this.x < left) this.vx = Math.abs(this.vx)+6;
+      if(this.x > right) this.vx = -Math.abs(this.vx)-6;
+    }
+
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const img = assets.get("daughter");
+      if(img){
+        // daughter stays mostly undistorted (so player can protect her)
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(img, sx-2, sy-6, 20, 32);
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = PAL.daughter;
+        ctx.fillRect(sx-4, sy-6, 24, 34);
+        ctx.restore();
+      }else{
+        drawPlaceholderEntity(ctx, "daughter", sx, sy, this.w, this.h, 1, 0);
+      }
+
+      // cower indicator
+      if(this.state==="cower"){
+        ctx.fillStyle = "#fff";
+        ctx.font = "10px ui-monospace, monospace";
+        ctx.fillText("!", sx+5, sy-4);
+      }
+    }
+  }
+
+  class NoteItem extends Entity{
+    constructor(x, id){
+      super(x, 0, 10, 8);
+      this.x = x;
+      this.y = 0;
+      this.id = id;
+      this.bob = rand(0,6.28);
+    }
+    update(dt, world){
+      this.bob += dt*2;
+      this.y = world.groundY - 14 + Math.sin(this.bob)*2;
+    }
+    draw(ctx, world){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+      const img = assets.get("note");
+      if(img){
+        drawGlitchSprite(ctx, img, sx-2, sy-2, 14, 12, {slice:3, jitter:2, channel:1, smear:0, burn:0.2, alpha:0.95});
+      }else{
+        drawPlaceholderEntity(ctx, "note", sx, sy, this.w, this.h, 1, 0);
+      }
+    }
+  }
+
+  class Chest extends Entity{
+    constructor(x){
+      super(x, 0, 18, 14);
+      this.x = x;
+      this.opened = false;
+      this.bob = rand(0,6.28);
+      this.y = 0;
+    }
+    update(dt, world){
+      this.bob += dt*2.4;
+      this.y = world.groundY - 18 + Math.sin(this.bob)*1.6;
+    }
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const img = assets.get("chest");
+      if(img){
+        const mood = clamp(game.tension.heat + (1-game.player.san/game.player.sanMax),0,1);
+        drawGlitchSprite(ctx, img, sx-2, sy-4, 22, 20, {slice: 4+(mood*6)|0, jitter:2+(mood*3), channel:(mood*3)|0, smear:1, burn:mood*0.3, alpha:1});
+      }else{
+        drawPlaceholderEntity(ctx, "chest", sx, sy, this.w, this.h, 1, 0);
+      }
+
+      if(!this.opened){
+        // shimmer
+        ctx.globalAlpha = 0.45;
+        ctx.fillStyle = PAL.gold;
+        ctx.fillRect(sx+7, sy-2, 2, 2);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  class Pickup extends Entity{
+    constructor(x, type){
+      super(x, 0, 10, 10);
+      this.x=x;
+      this.type=type; // "hp"|"sanity"|"down"
+      this.bob = rand(0,6.28);
+      this.y=0;
+    }
+    update(dt, world){
+      this.bob += dt*3.2;
+      this.y = world.groundY - 20 + Math.sin(this.bob)*2.2;
+    }
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const key = this.type==="hp" ? "power_hp" : (this.type==="sanity" ? "power_sanity" : "power_down");
+      const img = assets.get(key);
+
+      const mood = clamp(1 - game.player.san/game.player.sanMax, 0, 1);
+
+      if(img){
+        drawGlitchSprite(ctx, img, sx-2, sy-2, 14, 14, {slice: 2+(mood*5)|0, jitter: 2, channel: 1+(mood*2)|0, smear:0, burn:0.2, alpha:0.95});
+      }else{
+        ctx.fillStyle = PAL.outline;
+        ctx.fillRect(sx-1,sy-1, this.w+2, this.h+2);
+        ctx.fillStyle = (this.type==="hp") ? PAL.enemy : (this.type==="sanity" ? PAL.accent : "#3a3a44");
+        ctx.fillRect(sx,sy,this.w,this.h);
+        ctx.fillStyle = "#fff";
+        ctx.font="9px ui-monospace, monospace";
+        ctx.fillText(this.type==="hp"?"H":this.type==="sanity"?"S":"?", sx+2, sy+8);
+      }
+    }
+  }
+
+  /*********************
+   * Bosses
+   *********************/
+  class BossBase extends Entity{
+    constructor(x,y,w,h){
+      super(x,y,w,h);
+      this.maxHp=400;
+      this.hp=400;
+      this.phase=0;
+      this.name="BOSS";
+      this.trait="…";
+      this.weapon="…";
+      this.cool=0;
+      this.active=false;
+    }
+    hit(dmg, game){
+      this.hp -= dmg;
+      game.spawnFx(this.cx,this.cy,"blood",10);
+      if(this.hp <= 0){
+        this.dead = true;
+        game.spawnFx(this.cx,this.cy,"ash",40);
+        Whisper.push("THE ROOM EXHALES.", 2.2);
+        AudioSys.ping("boss", 1.0);
+      }
+    }
+  }
+
+  class BossSeraph extends BossBase{
+    constructor(x, world){
+      super(x, world.groundY-70, 38, 70);
+      this.name = "SERAPH-CLINICIAN";
+      this.trait = "Fixation on symmetry.";
+      this.weapon = "Suture Line";
+      this.maxHp = 520;
+      this.hp = 520;
+      this.cool = 1.0;
+      this.lineShots = [];
+    }
+
+    update(dt, world, game){
+      const p = game.player;
+      this.cool = Math.max(0, this.cool - dt);
+
+      // slow stalk
+      const dx = p.cx - this.cx;
+      this.vx = Math.sign(dx) * (40 + game.tension.heat*20);
+
+      this.vy += world.gravity*dt;
+      this.x += this.vx*dt;
+      this.y += this.vy*dt;
+      world.collide(this);
+
+      // phases by HP
+      this.phase = (this.hp < this.maxHp*0.55) ? 1 : 0;
+
+      // attack: stitch line (danger zones)
+      if(this.cool <= 0){
+        this.cool = this.phase ? 1.2 : 1.55;
+
+        // lay down a “line” between boss and player (damage if you stand on it)
+        const x0 = this.cx;
+        const y0 = this.y + 16;
+        const x1 = p.cx + rand(-20,20);
+        const y1 = p.y + 16 + rand(-10,10);
+
+        this.lineShots.push({x0,y0,x1,y1,t: (this.phase? 1.15 : 0.95)});
+        Whisper.push(chance(0.5)?"IT MEASURES YOU.":"IT MARKS YOU.", 1.5);
+        AudioSys.ping("boss", 0.65);
+
+        // sometimes also fire a burst at where you are moving
+        if(this.phase && chance(0.55)){
+          game.spawnBossBulletBurst(this.cx, this.y+18, p.cx + p.vx*0.2, p.cy, 3, 0.14, 250, 8);
+        }
+      }
+
+      // update lines and damage
+      for(const L of this.lineShots){
+        L.t -= dt;
+        // damage if player is “near line”
+        const distToLine = pointLineDistance(p.cx, p.cy, L.x0, L.y0, L.x1, L.y1);
+        if(distToLine < 8 && chance(0.25)){
+          p.hurt(2);
+        }
+      }
+      this.lineShots = this.lineShots.filter(L => L.t > 0);
+    }
+
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const img = assets.get("boss_seraph");
+      const mood = clamp(0.4 + game.tension.heat + (1-game.player.san/game.player.sanMax),0,1);
+
+      if(img){
+        drawGlitchSprite(ctx, img, sx-10, sy-14, this.w+22, this.h+28, {slice: 10+(mood*8)|0, jitter: 3+(mood*6), channel: 2+(mood*4)|0, smear: 2, burn:mood*0.7, alpha:1});
+      }else{
+        drawPlaceholderEntity(ctx, "boss_seraph", sx, sy, this.w, this.h, 1, mood*4);
+      }
+
+      // draw suture lines
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = PAL.accent;
+      for(const L of this.lineShots){
+        ctx.beginPath();
+        ctx.moveTo((L.x0-world.cam.x)|0, (L.y0-world.cam.y)|0);
+        ctx.lineTo((L.x1-world.cam.x)|0, (L.y1-world.cam.y)|0);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  class BossChoir extends BossBase{
+    constructor(x, world){
+      super(x, world.groundY-120, 54, 44);
+      this.name = "CHOIR-ENGINE";
+      this.trait = "Craves witness.";
+      this.weapon = "Chorus Burst";
+      this.maxHp=460;
+      this.hp=460;
+      this.cool=0.8;
+      this.wob=rand(0,6.28);
+    }
+
+    update(dt, world, game){
+      const p=game.player;
+      this.cool = Math.max(0, this.cool-dt);
+
+      // hover movement: tries to align with player x, but floats
+      const dx = p.cx - this.cx;
+      this.x += Math.sign(dx) * (70 + game.tension.heat*35) * dt;
+      this.y = (world.groundY - 120) + Math.sin(game.time*2 + this.wob)*12;
+
+      // phases: more bursts low hp
+      this.phase = (this.hp < this.maxHp*0.55) ? 1 : 0;
+
+      if(this.cool<=0){
+        this.cool = this.phase ? 0.55 : 0.85;
+
+        // “fires where you look”: aim uses player mouse direction
+        const mx = Input.mouse.x*RW + world.cam.x;
+        const my = Input.mouse.y*RH;
+        game.spawnBossBulletBurst(this.cx, this.cy, mx, my, this.phase? 5:3, this.phase?0.10:0.12, 280, 7);
+
+        Whisper.push(chance(0.5)?"DON'T WATCH IT SING.":"THE SONG LOOKS BACK.", 1.5);
+        AudioSys.ping("boss", 0.55);
+
+        // occasionally summon a flyer
+        if(this.phase && chance(0.45)){
+          game.enemies.push(new Angel(world.cam.x + RW + 40, world.groundY - randi(50,100), "fly"));
+        }
+      }
+    }
+
+    draw(ctx, world, game){
+      const sx=(this.x-world.cam.x)|0;
+      const sy=(this.y-world.cam.y)|0;
+
+      const img = assets.get("boss_choir");
+      const mood = clamp(0.35 + game.tension.heat + (1-game.player.san/game.player.sanMax),0,1);
+
+      if(img){
+        drawGlitchSprite(ctx, img, sx-12, sy-10, this.w+24, this.h+20, {slice: 12+(mood*10)|0, jitter: 3+(mood*8), channel: 2+(mood*4)|0, smear: 3, burn:mood*0.8, alpha:1});
+      }else{
+        drawPlaceholderEntity(ctx, "boss_choir", sx, sy, this.w, this.h, 1, mood*4);
+      }
+    }
+  }
+
+  function pointLineDistance(px,py, x0,y0, x1,y1){
+    const A = px - x0, B = py - y0;
+    const C = x1 - x0, D = y1 - y0;
+    const dot = A*C + B*D;
+    const lenSq = C*C + D*D || 1;
+    let t = dot / lenSq;
+    t = clamp(t, 0, 1);
+    const xx = x0 + t*C;
+    const yy = y0 + t*D;
+    return Math.hypot(px-xx, py-yy);
+  }
+
+  /*********************
+   * Tension Manager + Madness
+   *********************/
+  class Tension {
+    constructor(){
+      this.mode="atmosphere"; // atmosphere|frenetic|boss
+      this.heat=0;
+      this.spawnT=0;
+      this.depth=0;
+      this.bossIndex=0;
+    }
+    update(dt, game){
+      this.depth = Math.floor(game.player.x/10);
+
+      const target = (this.mode==="frenetic" || this.mode==="boss") ? 1 : 0;
+      this.heat = lerp(this.heat, target, 1 - Math.pow(0.0009, dt));
+
+      // trigger frenetic
+      if(this.mode==="atmosphere"){
+        if(game.player.x > game.world.thresholdX || game.collectedNotes>0 || game.openedChests>0){
+          this.mode="frenetic";
+          this.spawnT = 0.18;
+          Whisper.push("THE AIR HARDENS. WINGS IN THE FOG.", 2.2);
+          AudioSys.ping("thump", 1.1);
+        }
+      }
+
+      // boss triggers at depth milestones
+      if(!game.boss && this.mode!=="boss"){
+        const wantBoss =
+          (this.bossIndex===0 && this.depth > 220) ||
+          (this.bossIndex===1 && this.depth > 520);
+
+        if(wantBoss){
+          this.mode="boss";
+          game.startBoss(this.bossIndex);
+          this.bossIndex++;
+          return;
+        }
+      }
+
+      // enemy spawning in frenetic (not during boss)
+      if(this.mode==="frenetic" && !game.boss){
+        this.spawnT -= dt;
+        const base = 0.75 - 0.25*this.heat;
+        if(this.spawnT<=0){
+          this.spawnT = rand(base*0.65, base*1.25);
+          game.spawnEnemyWave();
+        }
+      }
+    }
+  }
+
+  class Madness {
+    constructor(){
+      this.noise=0.18; this.scan=0.12; this.vign=0.55;
+      this.invertT=0;
+      this.paletteT=0;
+      this.glitchKick=0;
+      this.faceT=0;
+      this.faceKey="face1";
+      this.faceAlpha=0;
+    }
+    update(dt, game){
+      const p=game.player;
+      const sanity = p ? (p.san/p.sanMax) : 1;
+      const heat = game.tension.heat;
+
+      const stress = clamp((1-sanity)*0.95 + heat*0.65 + (game.boss?0.35:0), 0, 1);
+      this.noise = lerp(this.noise, 0.10 + stress*0.62, 1 - Math.pow(0.001, dt));
+      this.scan  = lerp(this.scan,  0.06 + stress*0.32, 1 - Math.pow(0.001, dt));
+      this.vign  = lerp(this.vign,  0.30 + stress*0.70, 1 - Math.pow(0.001, dt));
+
+      const pEvent = (game.state==="playing") ? (0.002 + (1-sanity)*0.012 + heat*0.004 + (game.boss?0.006:0)) : 0;
+      if(chance(pEvent * dt * 60)){
+        if(chance(0.50)){
+          this.invertT = rand(2.0, 5.0);
+          Whisper.push("YOUR HANDS ARE NOT YOURS.", 2.0);
+          this.glitchKick = 0.35;
+        }else{
+          // face overlay event
+          this.faceT = rand(0.8, 2.2);
+          this.faceKey = ["face1","face2","face3","face4"][randi(0,3)];
+          this.faceAlpha = rand(0.18, 0.38);
+          Whisper.push("A FACE THAT ISN'T YOURS BLINKS.", 2.0);
+          this.glitchKick = 0.35;
+        }
+      }
+
+      this.invertT = Math.max(0, this.invertT-dt);
+      this.glitchKick = Math.max(0, this.glitchKick-dt);
+      this.faceT = Math.max(0, this.faceT-dt);
+      if(this.faceT <= 0) this.faceAlpha = lerp(this.faceAlpha, 0, 1 - Math.pow(0.0001, dt));
+
+      Input.invertMove = this.invertT > 0;
+    }
+
+    post(ctx, game){
+      const w=ctx.canvas.width, h=ctx.canvas.height;
+
+      // glitch kick shift
+      if(this.glitchKick>0){
+        const k=this.glitchKick;
+        const dx=(Math.sin(game.time*40)*2)*k;
+        const dy=(Math.cos(game.time*27)*1)*k;
+        ctx.globalAlpha=0.75;
+        ctx.drawImage(ctx.canvas, dx, dy);
+        ctx.globalAlpha=1;
+      }
+
+      // scanlines
+      ctx.globalAlpha=this.scan;
+      ctx.fillStyle="#000";
+      for(let y=0;y<h;y+=2) ctx.fillRect(0,y,w,1);
+      ctx.globalAlpha=1;
+
+      // noise
+      const dots = Math.floor(w*h*(0.008 + this.noise*0.05));
+      ctx.globalAlpha = 0.10 + this.noise*0.22;
+      ctx.fillStyle="#fff";
+      for(let i=0;i<dots;i++){
+        ctx.fillRect((Math.random()*w)|0, (Math.random()*h)|0, 1, 1);
+      }
+      ctx.globalAlpha=1;
+
+      // vignette (cheap borders)
+      ctx.globalAlpha=0.10 + this.vign*0.18;
+      ctx.fillStyle="#000";
+      const b=10;
+      ctx.fillRect(0,0,w,b); ctx.fillRect(0,h-b,w,b);
+      ctx.fillRect(0,0,b,h); ctx.fillRect(w-b,0,b,h);
+      ctx.globalAlpha=1;
+
+      // sanity wash
+      const p=game.player;
+      const sanity = p ? (p.san/p.sanMax) : 1;
+      const wash = clamp(1-sanity, 0, 1);
+      if(wash>0.02){
+        ctx.globalAlpha = wash*0.10;
+        ctx.fillStyle = PAL.accent;
+        ctx.fillRect(0,0,w,h);
+        ctx.globalAlpha=1;
+      }
+
+      // face overlay (PNG if present, else procedural smear)
+      if(this.faceAlpha > 0.01){
+        const img = assets.get(this.faceKey);
+        ctx.save();
+        ctx.globalAlpha = this.faceAlpha;
+
+        if(img){
+          // distort the face overlay aggressively
+          const x = (Math.sin(game.time*2)*8)|0;
+          const y = (Math.cos(game.time*1.7)*6)|0;
+          const ww = w + 24;
+          const hh = h + 24;
+          drawGlitchSprite(ctx, img, -12 + x, -12 + y, ww, hh, {
+            slice: 14,
+            jitter: 6,
+            channel: 4,
+            smear: 4,
+            burn: 0.9,
+            alpha: this.faceAlpha
+          });
+        }else{
+          ctx.globalCompositeOperation = "screen";
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0,0,w,h);
+          ctx.globalCompositeOperation = "source-over";
+        }
+        ctx.restore();
+      }
+    }
+  }
+
+  /*********************
+   * Game
+   *********************/
+  class Game {
+    constructor(){
+      this.state="menu"; // menu|playing|lore|over
+      this.world = new World();
+      this.player = null;
+
+      this.enemies = [];
+      this.bullets = [];
+      this.particles = [];
+      this.notes = [];
+      this.pickups = [];
+      this.chests = [];
+
+      this.daughter = null;
+      this.boss = null;
+      this.bossBullets = [];
+
+      this.tension = new Tension();
+      this.madness = new Madness();
+
+      this.collectedNotes=0;
+      this.openedChests=0;
+
+      this.time=0;
+
+      this.last = performance.now();
+
+      this._seedRunObjects();
+    }
+
+    _seedRunObjects(){
+      // notes and chests on the path
+      this.notes.length=0;
+      this.chests.length=0;
+      this.pickups.length=0;
+
+      const noteXs = [520, 980, 1460, 1880];
+      for(let i=0;i<noteXs.length;i++){
+        this.notes.push(new NoteItem(noteXs[i] + randi(-30,30), i));
+      }
+
+      const chestXs = [740, 1220, 1760, 2140];
+      for(let i=0;i<chestXs.length;i++){
+        this.chests.push(new Chest(chestXs[i] + randi(-40,40)));
+      }
+    }
+
+    start(name, avi){
+      this.state="playing";
+
+      this.world.reset();
+      this.player = new Player(name, avi);
+
+      this.enemies.length=0;
+      this.bullets.length=0;
+      this.particles.length=0;
+      this.pickups.length=0;
+      this.bossBullets.length=0;
+
+      this.daughter = null;
+      this.boss = null;
+
+      this.tension = new Tension();
+      this.madness = new Madness();
+
+      this.collectedNotes=0;
+      this.openedChests=0;
+
+      Whisper.list.length=0;
+      Whisper.push("FOG. BREATH. A CLICKING SKY.", 2.2);
+
+      this._seedRunObjects();
+
+      AudioSys.start();
+      AudioSys.setIntensity(0);
+    }
+
+    gameOver(reason, bad=false){
+      this.state="over";
+      UI.overOverlay.style.display="grid";
+      UI.overTitle.textContent = bad ? "BAD ENDING" : "SIGNAL LOST";
+      UI.overReason.textContent = reason;
+      UI.uiLayer.style.display="none";
+      AudioSys.setIntensity(bad ? 0.9 : 0.55);
+      AudioSys.ping(bad ? "boss" : "hit", 1.0);
+    }
+
+    openLore(text){
+      this.state="lore";
+      UI.loreOverlay.style.display="grid";
+      UI.loreText.textContent = text;
+    }
+
+    closeLore(){
+      if(this.state==="lore"){
+        this.state="playing";
+        UI.loreOverlay.style.display="none";
+      }
+    }
+
+    spawnFx(x,y,kind,n){
+      for(let i=0;i<n;i++) this.particles.push(new Particle(x,y,kind));
+    }
+
+    spawnPickup(x,y,type){
+      this.pickups.push(new Pickup(x + randi(-10,10), type));
+    }
+
+    shootFromPlayer(p){
+      AudioSys.ping("shoot", 0.7);
+
+      const mx = Input.mouse.x*RW + this.world.cam.x;
+      const my = Input.mouse.y*RH;
+
+      const drift = (1 - p.san/p.sanMax) * 16 + (p.aimShiver>0 ? 10 : 0);
+      const ax = mx + rand(-drift, drift);
+      const ay = my + rand(-drift, drift);
+
+      const ox = p.x + (p.facing>0 ? p.w : 0);
+      const oy = p.y + 14;
+
+      const baseAng = Math.atan2(ay - oy, ax - ox);
+
+      const count = p.weapon.bullets;
+      for(let i=0;i<count;i++){
+        const sp = 600;
+        const spread = p.weapon.spread;
+        const ang = baseAng + rand(-spread, spread);
+        const vx = Math.cos(ang)*sp;
+        const vy = Math.sin(ang)*sp;
+
+        const b = new Bullet(ox, oy, vx, vy, p.weapon.dmg, p.weapon.pierce, "player");
+        this.bullets.push(b);
+      }
+
+      // sanity cost
+      p.san = clamp(p.san - 0.55, 0, p.sanMax);
+
+      // occasional lore whisper on shooting (keeps atmosphere)
+      if(chance(0.02)) Whisper.push("THE TRIGGER IS A PRAYER.", 1.8);
+    }
+
+    spawnBossBulletBurst(x0,y0, x1,y1, count, spread, speed, dmg){
+      const base = Math.atan2(y1 - y0, x1 - x0);
+      for(let i=0;i<count;i++){
+        const ang = base + rand(-spread, spread);
+        const vx = Math.cos(ang)*speed;
+        const vy = Math.sin(ang)*speed;
+        const b = new Bullet(x0, y0, vx, vy, dmg, 0, "boss");
+        b.w=5; b.h=5;
+        this.bossBullets.push(b);
+      }
+    }
+
+    spawnEnemyWave(){
+      // spawn 1-3 angels ahead
+      const count=randi(1,3);
+      for(let i=0;i<count;i++){
+        const type = chance(0.45) ? "fly" : "walk";
+        const x = this.world.cam.x + RW + randi(20,80);
+        const y = (type==="fly") ? (this.world.groundY - randi(60,120)) : (this.world.groundY - 50);
+        this.enemies.push(new Angel(x,y,type));
+      }
+
+      // daughter may wander in (rare)
+      if(!this.daughter && chance(0.07)){
+        this.daughter = new Daughter(this.world.cam.x + RW - randi(50,90));
+        Whisper.push("SHE ARRIVES WITHOUT SOUND.", 2.2);
+        AudioSys.ping("thump", 0.9);
+      }
+    }
+
+    startBoss(index){
+      // clear some normal enemies
+      this.enemies = this.enemies.filter(e => e.x < this.world.cam.x - 40);
+      this.bullets.length=0;
+      this.bossBullets.length=0;
+
+      if(index===0){
+        this.boss = new BossSeraph(this.world.cam.x + RW + 80, this.world);
+        Whisper.push("A DOOR WITH NO WALL OPENS.", 2.2);
+        Whisper.push("SERAPH-CLINICIAN ENTERS.", 2.2);
+        this.openLore(formatLore(2, this.player.name, this.player.avi));
+      }else{
+        this.boss = new BossChoir(this.world.cam.x + RW + 80, this.world);
+        Whisper.push("THE AIR FILLS WITH SINGING WIRES.", 2.2);
+        Whisper.push("CHOIR-ENGINE ENTERS.", 2.2);
+        this.openLore(formatLore(3, this.player.name, this.player.avi));
+      }
+
+      AudioSys.ping("boss", 1.0);
+      AudioSys.setIntensity(1.0);
+    }
+
+    applyPowerDown(){
+      // power-downs: weird psychological penalties
+      const p=this.player;
+      const roll = randi(0,3);
+      if(roll===0){
+        p.fireJam = Math.max(p.fireJam, rand(4,8));
+        Whisper.push("THE WEAPON FEELS FOREIGN.", 2.0);
+      }else if(roll===1){
+        this.madness.invertT = Math.max(this.madness.invertT, rand(3,6));
+        Whisper.push("LEFT AND RIGHT EXCHANGE NAMES.", 2.0);
+      }else if(roll===2){
+        p.aimShiver = Math.max(p.aimShiver, rand(4,8));
+        Whisper.push("YOUR AIM STARTS LISTENING TO SOMETHING ELSE.", 2.0);
+      }else{
+        // “stain” drains sanity hard
+        p.san = clamp(p.san - rand(18,34), 0, p.sanMax);
+        this.madness.faceT = Math.max(this.madness.faceT, rand(1.2,2.4));
+        this.madness.faceAlpha = Math.max(this.madness.faceAlpha, 0.32);
+        Whisper.push("A STAIN SPREADS BEHIND YOUR EYES.", 2.0);
+      }
+    }
+
+    openChest(chest){
+      chest.opened=true;
+      this.openedChests++;
+      Whisper.push("THE CHEST OPENS LIKE A MOUTH.", 2.0);
+      AudioSys.ping("thump", 0.8);
+
+      // loot table: power-up OR power-down OR note fragment
+      const roll = Math.random();
+      if(roll < 0.42){
+        const t = chance(0.55) ? "hp" : "sanity";
+        this.spawnPickup(chest.x, chest.y, t);
+        Whisper.push(t==="hp" ? "FLESH REMEMBERS HOW TO CLOSE." : "THE LIGHT RETURNS (WRONG).", 1.8);
+      }else if(roll < 0.76){
+        this.spawnPickup(chest.x, chest.y, "down");
+        Whisper.push("A GIFT WITH TEETH.", 1.8);
+      }else{
+        this.collectedNotes++;
+        this.openLore(formatLore(1, this.player.name, this.player.avi));
+      }
+
+      // chests can awaken frenetic
+      if(this.tension.mode==="atmosphere"){
+        this.tension.mode="frenetic";
+        this.tension.spawnT = 0.2;
+        Whisper.push("THE AIR HARDENS. WINGS IN THE FOG.", 2.2);
+      }
+    }
+
+    update(dt){
+      this.time += dt;
+      Whisper.update(dt);
+
+      // menu/over: keep a subtle scene alive
+      if(this.state==="menu"){
+        AudioSys.setIntensity(0);
+        return;
+      }
+      if(this.state==="over"){
+        // drift effects
+        this.madness.update(dt, this);
+        return;
+      }
+      if(this.state==="lore"){
+        // paused
+        this.madness.update(dt, this);
+        AudioSys.setIntensity(0.22);
+        return;
+      }
+
+      // PLAYING
+      const p=this.player;
+
+      // camera follow
+      const targetX = p.x - RW*0.33;
+      this.world.cam.x = lerp(this.world.cam.x, targetX, 1 - Math.pow(0.00025, dt));
+      this.world.cam.x = Math.max(0, this.world.cam.x);
+
+      // tension + madness + audio
+      this.tension.update(dt, this);
+      this.madness.update(dt, this);
+
+      AudioSys.setIntensity(this.tension.mode==="boss" ? 1.0 : this.tension.heat);
+
+      // update player
+      p.update(dt, this.world, this);
+
+      // update entities
+      for(const e of this.enemies) e.update(dt, this.world, this);
+      for(const b of this.bullets) b.update(dt, this.world, this);
+      for(const b of this.bossBullets) b.update(dt, this.world, this);
+      for(const n of this.notes) n.update(dt, this.world);
+      for(const c of this.chests) c.update(dt, this.world);
+      for(const pu of this.pickups) pu.update(dt, this.world);
+
+      if(this.daughter) this.daughter.update(dt, this.world, this);
+      if(this.boss) this.boss.update(dt, this.world, this);
+
+      for(const q of this.particles) q.update(dt, this.world);
+
+      // Interactions: notes + chests + pickups (E)
+      if(Input.interact()){
+        // notes
+        for(const n of this.notes){
+          if(n.dead) continue;
+          if(aabb(p.x,p.y,p.w,p.h, n.x-10,n.y-10, 30, 30)){
+            n.dead=true;
+            this.collectedNotes++;
+            this.openLore(formatLore(n.id, p.name, p.avi));
+            AudioSys.ping("thump", 0.7);
+            Whisper.push("THE PAPER IS WARM.", 1.8);
+            break;
+          }
+        }
+        // chests
+        for(const c of this.chests){
+          if(c.opened) continue;
+          if(aabb(p.x,p.y,p.w,p.h, c.x-10,c.y-10, 34, 30)){
+            this.openChest(c);
+            break;
+          }
+        }
+      }
+
+      // pickups auto collect
+      for(const pu of this.pickups){
+        if(pu.dead) continue;
+        if(aabb(p.x,p.y,p.w,p.h, pu.x-4,pu.y-4, 18,18)){
+          pu.dead=true;
+          if(pu.type==="hp"){
+            p.heal(28);
+            Whisper.push("FLESH REMEMBERS HOW TO CLOSE.", 1.8);
+          }else if(pu.type==="sanity"){
+            p.soothe(38);
+            this.madness.invertT = 0;
+            this.madness.faceT = 0;
+            this.madness.faceAlpha = 0;
+            Whisper.push("THE LIGHT RETURNS (WRONG).", 1.8);
+          }else{
+            this.applyPowerDown();
+          }
+          AudioSys.ping("thump", 0.6);
+        }
+      }
+
+      // bullet collisions vs enemies/boss/daughter/player
+      this.resolveCombat();
+
+      // cleanup
+      this.enemies = this.enemies.filter(e=>!e.dead);
+      this.bullets = this.bullets.filter(b=>!b.dead);
+      this.bossBullets = this.bossBullets.filter(b=>!b.dead);
+      this.notes = this.notes.filter(n=>!n.dead);
+      this.pickups = this.pickups.filter(pu=>!pu.dead);
+      this.particles = this.particles.filter(q=>q.life>0);
+
+      // lose
+      if(p.hp<=0){
+        this.gameOver("PHYSICAL VESSEL DESTROYED\n\nThe fog keeps your shape and throws the rest away.");
+      }
+      if(p.san<=0){
+        this.gameOver("MIND FRACTURED\n\nThe screen learns to hallucinate without you.");
+      }
+
+      // boss ended?
+      if(this.boss && this.boss.dead){
+        this.boss = null;
+        this.tension.mode = "frenetic";
+        this.spawnPickup(p.x + 80, this.world.groundY - 30, "sanity");
+        this.spawnPickup(p.x + 110, this.world.groundY - 30, "hp");
+      }
+    }
+
+    resolveCombat(){
+      const p=this.player;
+
+      // player bullets
+      for(const b of this.bullets){
+        if(b.dead) continue;
+
+        // hit daughter = BAD ENDING
+        if(this.daughter && aabb(b.x,b.y,b.w,b.h, this.daughter.x,this.daughter.y,this.daughter.w,this.daughter.h)){
+          b.dead=true;
+          this.spawnFx(this.daughter.cx, this.daughter.cy, "blood", 28);
+          this.gameOver(
+            "YOU KILLED THE CHILD.\nTHE CYCLE IS BROKEN.\nHOPE IS GONE.\n\nBad Ending.",
+            true
+          );
+          return;
+        }
+
+        // hit enemies
+        for(const e of this.enemies){
+          if(e.dead) continue;
+          if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
+            if(b.hitSet.has(e)) continue;
+            b.hitSet.add(e);
+
+            e.hit(b.dmg, this);
+            AudioSys.ping("hit", 0.55);
+
+            if(b.pierce>0){
+              b.pierce--;
+              // keep bullet alive
+            }else{
+              b.dead=true;
+            }
+            break;
+          }
+        }
+
+        // hit boss
+        if(this.boss && !this.boss.dead && aabb(b.x,b.y,b.w,b.h, this.boss.x,this.boss.y,this.boss.w,this.boss.h)){
+          this.boss.hit(b.dmg, this);
+          AudioSys.ping("hit", 0.7);
+          b.dead=true;
+        }
+      }
+
+      // boss bullets hit player/daughter
+      for(const b of this.bossBullets){
+        if(b.dead) continue;
+
+        if(aabb(b.x,b.y,b.w,b.h, p.x,p.y,p.w,p.h)){
+          b.dead=true;
+          p.hurt(9);
+          this.spawnFx(p.cx,p.cy,"blood",10);
+          AudioSys.ping("hit", 0.95);
+        }
+
+        if(this.daughter && aabb(b.x,b.y,b.w,b.h, this.daughter.x,this.daughter.y,this.daughter.w,this.daughter.h)){
+          // boss bullets also kill daughter -> bad ending (keeps the protection core)
+          b.dead=true;
+          this.spawnFx(this.daughter.cx, this.daughter.cy, "blood", 28);
+          this.gameOver(
+            "THE SONG TOUCHED THE CHILD.\nYOUR HANDS DIDN'T — BUT THE END DOESN'T CARE.\n\nBad Ending.",
+            true
+          );
+          return;
+        }
+      }
+    }
+
+    draw(){
+      // world
+      this.world.draw(bctx, this.time);
+
+      // entities (order matters)
+      for(const n of this.notes) n.draw(bctx, this.world);
+      for(const c of this.chests) c.draw(bctx, this.world, this);
+      for(const pu of this.pickups) pu.draw(bctx, this.world, this);
+
+      if(this.daughter) this.daughter.draw(bctx, this.world, this);
+
+      for(const e of this.enemies) e.draw(bctx, this.world, this);
+      if(this.boss) this.boss.draw(bctx, this.world, this);
+
+      // bullets
+      for(const b of this.bossBullets) b.draw(bctx, this.world, this);
+      for(const b of this.bullets) b.draw(bctx, this.world, this);
+
+      // player
+      if(this.player) this.player.draw(bctx, this.world, this);
+
+      // particles
+      for(const q of this.particles) q.draw(bctx, this.world.cam);
+
+      // lighting (lantern) + fog mask
+      this.drawLighting(bctx);
+
+      // whispers + hud text in low-res
+      this.drawLowResText(bctx);
+
+      // post fx
+      this.madness.post(bctx, this);
+
+      // upscale
+      ctx.fillStyle="#000";
+      ctx.fillRect(0,0,W,H);
+
+      const scale = Math.max(1, Math.floor(Math.min(W/RW, H/RH)));
+      const dw = RW*scale, dh = RH*scale;
+      const dx = ((W-dw)/2)|0, dy=((H-dh)/2)|0;
+      ctx.drawImage(buffer, 0,0,RW,RH, dx,dy,dw,dh);
+    }
+
+    drawLighting(ctx){
+      if(!this.player) return;
+
+      const p = this.player;
+      const px = (p.x - this.world.cam.x + p.w/2)|0;
+      const py = (p.y + p.h/2)|0;
+      const rad = p.lantern;
+
+      // darkness radial
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+
+      const fog = ctx.createRadialGradient(px, py, rad*0.2, px, py, rad*1.55);
+      fog.addColorStop(0, "rgba(0,0,0,0)");
+      fog.addColorStop(0.55, "rgba(0,0,0,0.45)");
+      fog.addColorStop(1, "rgba(0,0,0,0.98)");
+      ctx.fillStyle = fog;
+      ctx.fillRect(0,0,RW,RH);
+
+      // additional “breathing mist pillars”
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = 0.14 + this.tension.heat*0.12;
+      ctx.fillStyle = "#111";
+      for(let i=0;i<10;i++){
+        const mx = ((performance.now()/50 + i*210) % (RW + 420)) - 210;
+        ctx.fillRect(mx, 0, 90, RH);
+      }
+      ctx.restore();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+    }
+
+    drawLowResText(ctx){
+      // crosshair
+      const mx = (Input.mouse.x*RW)|0;
+      const my = (Input.mouse.y*RH)|0;
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = "#888";
       ctx.beginPath();
-      ctx.moveTo(x - 10, y - 80*this.scale);
-      ctx.lineTo(x + 40*this.scale, y - 130*this.scale);
-      ctx.lineTo(x + 90*this.scale, y - 80*this.scale);
-      ctx.fill();
-      // Windows (dark)
-      ctx.fillStyle = '#000';
-      ctx.fillRect(x + 10, y - 50*this.scale, 20, 30);
-    } else {
-      // Grave
-      ctx.fillStyle = '#111';
-      ctx.beginPath();
-      ctx.arc(x, y - 20, 15, Math.PI, 0);
-      ctx.lineTo(x+15, y);
-      ctx.lineTo(x-15, y);
-      ctx.fill();
-    }
-  }
-}
+      ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
+      ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
+      ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
+      ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
 
-// --- WORLD MANAGER ---
-
-class World {
-  constructor() {
-    this.reset();
-  }
-  reset() {
-    this.camX = 0;
-    this.player = new Player();
-    this.bullets = [];
-    this.enemies = [];
-    this.particles = [];
-    this.obstacles = [];
-    this.pickups = [];
-    this.daughters = [];
-    this.decorations = [];
-    this.score = 0;
-    this.tension = 0; // 0 to 1
-    
-    // Generate Level Chunks
-    this.genLevel();
-  }
-
-  genLevel() {
-    let x = 400;
-    // Floor
-    for(let i=0; i<200; i++) {
-      // Obstacles (Capped height for jumpability)
-      if (Math.random() > 0.7) {
-        const h = randi(20, 50); // Player jump is ~100+
-        const w = randi(30, 80);
-        this.obstacles.push({x, y: GROUND_Y() - h, w, h});
-      }
-      
-      // Decorations
-      if (Math.random() > 0.8) {
-        const types = ['tree', 'tree', 'grave', 'house'];
-        this.decorations.push(new Decoration(x + rand(-50,50), types[randi(0,4)]));
+      // whispers bottom
+      ctx.font = "10px ui-monospace, monospace";
+      let yy = RH - 10;
+      for(const w of Whisper.list.slice(-2)){
+        ctx.globalAlpha = clamp(w.t/2, 0, 1) * 0.9;
+        ctx.fillStyle = "#9a9aaa";
+        // slight glitch wobble in text
+        const wob = ((Math.sin(this.time*16 + yy*0.3) * (this.tension.heat*2))|0);
+        ctx.fillText(w.text, 8 + wob, yy);
+        yy -= 10;
+        ctx.globalAlpha = 1;
       }
 
-      // Enemy triggers (Spawn later)
-      
-      // Daughter spawns every 2000px roughly
-      if (i > 0 && i % 15 === 0) {
-        this.daughters.push(new Daughter(x));
+      // boss hp bar in low-res (only during boss)
+      if(this.boss && !this.boss.dead){
+        const w=220, h=6, x=50, y=10;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x-1,y-1,w+2,h+2);
+        ctx.fillStyle = "#2a2a33";
+        ctx.fillRect(x,y,w,h);
+        ctx.fillStyle = PAL.accent;
+        ctx.fillRect(x,y, (w*(this.boss.hp/this.boss.maxHp))|0, h);
+        ctx.fillStyle = "#ddd";
+        ctx.fillText(this.boss.name, x, y+16);
       }
-      
-      x += rand(100, 300);
     }
   }
 
-  addParticles(x, y, c, n) {
-    for(let i=0; i<n; i++) this.particles.push(new Particle(x,y,c, 10));
-  }
+  const game = new Game();
 
-  update(dt, input) {
-    this.player.update(dt, input, this);
-    
-    // Camera
-    this.camX = this.player.x - width * 0.3;
-    if (this.camX < 0) this.camX = 0;
+  /*********************
+   * UI wiring
+   *********************/
+  const UI = {
+    menuOverlay: document.getElementById("menuOverlay"),
+    loreOverlay: document.getElementById("loreOverlay"),
+    loreText: document.getElementById("loreText"),
+    closeLoreBtn: document.getElementById("closeLoreBtn"),
 
-    // Entities
-    [...this.bullets, ...this.enemies, ...this.daughters, ...this.particles].forEach(e => e.update(dt, this));
-    
-    // Cleanup
-    this.bullets = this.bullets.filter(b => !b.dead);
-    this.enemies = this.enemies.filter(e => !e.dead);
-    this.particles = this.particles.filter(p => p.life > 0);
-    
-    // Pickups
-    this.pickups.forEach((p, i) => {
-      // Simple collision
-      const py = p.y - 10 + Math.sin(Date.now()/200)*5;
-      if (dist({x:p.x, y:py}, this.player) < 30) {
-        if(p.type==='hp') this.player.hp = Math.min(100, this.player.hp+25);
-        if(p.type==='san') this.player.sanity = Math.min(100, this.player.sanity+30);
-        this.pickups.splice(i, 1);
-        Audio.play('jump'); // reuse sound
-      }
+    overOverlay: document.getElementById("overOverlay"),
+    overTitle: document.getElementById("overTitle"),
+    overReason: document.getElementById("overReason"),
+
+    startBtn: document.getElementById("startBtn"),
+    retryBtn: document.getElementById("retryBtn"),
+    backBtn: document.getElementById("backBtn"),
+    playerName: document.getElementById("playerName"),
+
+    uiLayer: document.getElementById("ui_layer"),
+    uiHP: document.getElementById("ui_hp"),
+    uiSAN: document.getElementById("ui_san"),
+    uiDepth: document.getElementById("ui_depth"),
+    uiMode: document.getElementById("ui_mode"),
+    uiBoss: document.getElementById("ui_boss"),
+    uiWeapon: document.getElementById("ui_weapon"),
+
+    uploadBtn: document.getElementById("uploadBtn"),
+    fileInput: document.getElementById("fileInput"),
+    assetDot: document.getElementById("assetDot"),
+    assetStatus: document.getElementById("assetStatus"),
+  };
+
+  let selectedAvi = 0;
+  document.querySelectorAll(".avi").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      document.querySelectorAll(".avi").forEach(x=>x.classList.remove("sel"));
+      el.classList.add("sel");
+      selectedAvi = parseInt(el.dataset.avi,10)||0;
     });
+  });
 
-    // Spawning Logic (Tension Manager)
-    this.score = Math.floor(this.player.x / 10);
-    // More tension deeper in
-    const tensionTarget = Math.min(1, this.score / 500); 
-    if (Math.random() < 0.01 + (tensionTarget * 0.03)) {
-      // Spawn enemy ahead
-      const type = Math.random() > 0.7 ? 'flyer' : 'walker';
-      this.enemies.push(new Enemy(this.player.x + width + 50, GROUND_Y() - 50, type));
+  UI.uploadBtn.addEventListener("click", ()=>UI.fileInput.click());
+  UI.fileInput.addEventListener("change", async ()=>{
+    await assets.loadFromFiles(UI.fileInput.files);
+    updateAssetStatus();
+  });
+
+  function updateAssetStatus(){
+    const haveAny = assets.images.size > 0;
+    if(haveAny){
+      UI.assetDot.className = "dot ok";
+      UI.assetStatus.textContent = `Sprites: ${assets.images.size} loaded`;
+    }else{
+      UI.assetDot.className = "dot warn";
+      UI.assetStatus.textContent = `Sprites: placeholders`;
+    }
+  }
+
+  UI.startBtn.addEventListener("click", async ()=>{
+    UI.menuOverlay.style.display="none";
+    UI.overOverlay.style.display="none";
+    UI.loreOverlay.style.display="none";
+    UI.uiLayer.style.display="flex";
+
+    const name = (UI.playerName.value || "SEEKER").trim().slice(0,18) || "SEEKER";
+    UI.playerName.value = name;
+
+    // Attempt repo assets load once (won't break if missing)
+    await assets.tryLoadManifest();
+    updateAssetStatus();
+
+    AudioSys.start();
+    game.start(name, selectedAvi);
+  });
+
+  UI.playerName.addEventListener("keydown", (e)=>{ if(e.key==="Enter") UI.startBtn.click(); });
+
+  UI.closeLoreBtn.addEventListener("click", ()=>game.closeLore());
+  UI.retryBtn.addEventListener("click", ()=>{
+    UI.overOverlay.style.display="none";
+    UI.uiLayer.style.display="flex";
+    const name = (game.player?.name || UI.playerName.value || "SEEKER").trim().slice(0,18) || "SEEKER";
+    game.start(name, game.player?.avi ?? selectedAvi);
+  });
+  UI.backBtn.addEventListener("click", ()=>{
+    UI.overOverlay.style.display="none";
+    UI.loreOverlay.style.display="none";
+    UI.uiLayer.style.display="none";
+    UI.menuOverlay.style.display="grid";
+    game.state="menu";
+  });
+
+  // close lore with Space
+  function handleLoreClose(){
+    if(game.state==="lore" && Input.consume("Space")){
+      game.closeLore();
+    }
+  }
+
+  /*********************
+   * Main loop
+   *********************/
+  function frame(now){
+    const dt = Math.min((now - game.last)/1000, 0.05);
+    game.last = now;
+
+    handleLoreClose();
+
+    if(game.state==="playing"){
+      game.update(dt);
+
+      // HUD
+      const p = game.player;
+      UI.uiHP.style.width = `${(p.hp/p.hpMax*100)|0}%`;
+      UI.uiSAN.style.width = `${(p.san/p.sanMax*100)|0}%`;
+      UI.uiDepth.textContent = `DEPTH: ${(Math.floor(p.x/10))}m`;
+      UI.uiMode.textContent = game.tension.mode==="atmosphere" ? "ATMOSPHERE" : (game.tension.mode==="boss" ? "BOSS" : "FRENETIC");
+      UI.uiBoss.textContent = game.boss ? `${game.boss.name} // ${game.boss.trait}` : "";
+      UI.uiWeapon.textContent = `Weapon: ${p.weapon.name}`;
+    }else{
+      // still animate dread overlays
+      game.madness.update(dt, game);
+      Whisper.update(dt);
     }
 
-    // Game Over Checks
-    if (this.player.hp <= 0) gameOver('PHYSICAL VESSEL DESTROYED');
-    if (this.player.sanity <= 0) gameOver('MIND FRACTURED. LOST TO THE DARKNESS.');
+    // clear buffer each frame
+    bctx.clearRect(0,0,RW,RH);
+    game.draw();
+
+    requestAnimationFrame(frame);
   }
+  requestAnimationFrame(frame);
 
-  draw() {
-    // 1. Clear & Sky
-    ctx.fillStyle = PAL.bg;
-    ctx.fillRect(0, 0, width, height);
+  // Canvas click also starts audio (helps strict browsers)
+  canvas.addEventListener("pointerdown", ()=>AudioSys.start());
 
-    // 2. Parallax / Decorations
-    this.decorations.forEach(d => d.draw(ctx, this.camX * 0.5)); // Far bg move slower
-    
-    // 3. Ground
-    ctx.fillStyle = PAL.ground;
-    ctx.fillRect(0, GROUND_Y(), width, height - GROUND_Y());
-    
-    // 4. World Objects
-    ctx.fillStyle = PAL.obs;
-    this.obstacles.forEach(o => {
-      if (o.x - this.camX < width && o.x + o.w - this.camX > 0)
-        ctx.fillRect(o.x - this.camX, o.y, o.w, o.h);
-    });
-
-    // 5. Entities
-    this.pickups.forEach(p => {
-      const y = p.y - 10 + Math.sin(Date.now()/200)*5;
-      ctx.fillStyle = p.type === 'hp' ? '#f00' : '#a0f';
-      ctx.fillRect(p.x - this.camX, y, 10, 10);
-      ctx.font = '10px monospace'; ctx.fillStyle='#fff';
-      ctx.fillText(p.type.toUpperCase(), p.x - this.camX, y-5);
-    });
-
-    this.daughters.forEach(d => d.draw(ctx, this.camX));
-    this.enemies.forEach(e => e.draw(ctx, this.camX));
-    this.player.draw(ctx, this.camX);
-    this.bullets.forEach(b => b.draw(ctx, this.camX));
-    this.particles.forEach(p => p.draw(ctx, this.camX));
-
-    // 6. LIGHTING & ATMOSPHERE SYSTEM
-    // Create a dark mask
-    ctx.globalCompositeOperation = 'multiply';
-    
-    // The "Darkness"
-    // We create a radial gradient around the player
-    const px = this.player.x - this.camX + 8;
-    const py = this.player.y + 16;
-    const rad = this.player.lantern;
-    
-    const grad = ctx.createRadialGradient(px, py, rad * 0.2, px, py, rad);
-    grad.addColorStop(0, 'white'); // Fully lit (multiply by white = no change)
-    grad.addColorStop(1, 'black'); // Pitch black (multiply by black = black)
-    
-    ctx.fillStyle = grad;
-    // Fill the whole screen with the darkness gradient
-    // BUT we need to fill the rest with black first?
-    // Actually, 'multiply' means white preserves, black darkens.
-    
-    // Fill screen with black first? No.
-    // We want to darken everything EXCEPT the player.
-    
-    // Let's use source-over with a radial gradient that is transparent in center and black outside.
-    ctx.globalCompositeOperation = 'source-over';
-    const fog = ctx.createRadialGradient(px, py, rad * 0.2, px, py, rad * 1.5);
-    fog.addColorStop(0, 'rgba(0,0,0,0)');
-    fog.addColorStop(0.5, 'rgba(0,0,0,0.4)');
-    fog.addColorStop(1, 'rgba(0,0,0,0.98)');
-    
-    ctx.fillStyle = fog;
-    ctx.fillRect(0, 0, width, height);
-
-    // Add Mist
-    ctx.globalCompositeOperation = 'screen';
-    ctx.fillStyle = '#111';
-    for(let i=0; i<10; i++) {
-        let mx = (Date.now()/50 + i*200) % (width + 400) - 200;
-        ctx.fillRect(mx, 0, 100, height);
-    }
-    ctx.globalCompositeOperation = 'source-over';
-  }
-}
-
-// --- MAIN LOOP & STATE ---
-const world = new World();
-let lastTime = 0;
-let gameState = 'menu'; // menu, playing, over
-
-// Input Handler
-const Input = {
-  keys: {},
-  mouse: {x:0, y:0, down:false}
-};
-window.addEventListener('keydown', e => Input.keys[e.code] = true);
-window.addEventListener('keyup', e => Input.keys[e.code] = false);
-window.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  Input.mouse.x = e.clientX - r.left;
-  Input.mouse.y = e.clientY - r.top;
-});
-window.addEventListener('mousedown', () => Input.mouse.down = true);
-window.addEventListener('mouseup', () => Input.mouse.down = false);
-
-// Arc helper
-function arc(ctx, x, y, r) { ctx.arc(x,y,r,0,Math.PI*2); }
-
-function loop(t) {
-  const dt = Math.min((t - lastTime) / 1000, 0.1);
-  lastTime = t;
-
-  if (gameState === 'playing') {
-    world.update(dt, Input);
-    world.draw();
-    
-    // UI Update
-    document.getElementById('ui_hp').style.width = world.player.hp + '%';
-    document.getElementById('ui_san').style.width = world.player.sanity + '%';
-    document.getElementById('ui_score').innerText = 'DEPTH: ' + world.score + 'm';
-  }
-
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
-
-// --- UI LOGIC ---
-let selectedAvatar = 0;
-window.selectAvi = (id, el) => {
-  document.querySelectorAll('.avi').forEach(d => d.classList.remove('sel'));
-  el.classList.add('sel');
-  selectedAvatar = id;
-};
-
-document.getElementById('startBtn').onclick = () => {
-  document.getElementById('menuOverlay').style.display = 'none';
-  document.getElementById('ui_layer').style.display = 'flex';
-  Audio.start();
-  gameState = 'playing';
-  world.reset();
-  
-  // Apply class stats
-  if(selectedAvatar === 1) { world.player.sanity = 150; world.player.lantern = 250; } // Occultist
-  if(selectedAvatar === 2) { world.player.hp = 200; world.player.maxHp = 200; } // Heavy
-};
-
-function gameOver(reason) {
-  gameState = 'over';
-  document.getElementById('overOverlay').style.display = 'grid';
-  document.getElementById('overReason').innerText = reason;
-  document.getElementById('ui_layer').style.display = 'none';
-}
-
-// Lore Trigger (Simple random event logic)
-setInterval(() => {
-  if (gameState !== 'playing') return;
-  if (Math.random() < 0.05 && world.player.sanity > 20) {
-    // Glitch text effect in console
-    console.log("THEY ARE WATCHING " + Date.now());
-  }
-}, 5000);
-
+})();
 </script>
 </body>
 </html>
+
 
