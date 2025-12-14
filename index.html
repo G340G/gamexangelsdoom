@@ -1156,63 +1156,58 @@
         return PALETTES[baseIndex];
       }
 
-      // post-process overlays in low-res space
-      post(ctx, game, pal){
-        const w = ctx.canvas.width;
-        const h = ctx.canvas.height;
+      // post-process overlays in low-res spacepost(ctx, game, pal){
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
 
-        // glitch burst: tiny screen shift / tear
-        if(this.glitchKick > 0){
-          const k = this.glitchKick;
-          const dx = (Math.sin(game.time*40) * 2) * k;
-          const dy = (Math.cos(game.time*27) * 1) * k;
-          // copy within same ctx (cheap “tear”)
-          ctx.globalAlpha = 0.75;
-          ctx.drawImage(ctx.canvas, dx, dy);
-          ctx.globalAlpha = 1;
-        }
+  // glitch burst: tiny screen shift / tear
+  if(this.glitchKick > 0){
+    const k = this.glitchKick;
+    const dx = (Math.sin(game.time*40) * 2) * k;
+    const dy = (Math.cos(game.time*27) * 1) * k;
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(ctx.canvas, dx, dy);
+    ctx.globalAlpha = 1;
+  }
 
-        // scanlines
-        ctx.globalAlpha = this.scan;
-        ctx.fillStyle = "#000";
-        for(let y=0;y<h;y+=2){
-          ctx.fillRect(0,y, w,1);
-        }
-        ctx.globalAlpha = 1;
+  // scanlines
+  ctx.globalAlpha = this.scan;
+  ctx.fillStyle = "#000";
+  for(let y=0;y<h;y+=2) ctx.fillRect(0,y, w,1);
+  ctx.globalAlpha = 1;
 
-        // noise
-        const n = this.noise;
-        const dots = Math.floor(w*h * (0.010 + n*0.04));
-        ctx.globalAlpha = 0.10 + n*0.20;
-        ctx.fillStyle = "#fff";
-        for(let i=0;i<dots;i++){
-          const x = (Math.random()*w)|0;
-          const y = (Math.random()*h)|0;
-          ctx.fillRect(x,y,1,1);
-        }
-        ctx.globalAlpha = 1;
+  // noise
+  const n = this.noise;
+  const dots = Math.floor(w*h * (0.010 + n*0.04));
+  ctx.globalAlpha = 0.10 + n*0.20;
+  ctx.fillStyle = "#fff";
+  for(let i=0;i<dots;i++){
+    const x = (Math.random()*w)|0;
+    const y = (Math.random()*h)|0;
+    ctx.fillRect(x,y,1,1);
+  }
+  ctx.globalAlpha = 1;
 
-        // vignette
-        // (simple: draw dark border bands)
-        ctx.globalAlpha = 0.10 + this.vignette*0.18;
-        ctx.fillStyle = "#000";
-        const b = 10;
-        ctx.fillRect(0,0,w,b);
-        ctx.fillRect(0,h-b,w,b);
-        ctx.fillRect(0,0,b,h);
-        ctx.fillRect(w-b,0,b,h);
-        ctx.globalAlpha = 1;
+  // vignette
+  ctx.globalAlpha = 0.10 + this.vignette*0.18;
+  ctx.fillStyle = "#000";
+  const b = 10;
+  ctx.fillRect(0,0,w,b);
+  ctx.fillRect(0,h-b,w,b);
+  ctx.fillRect(0,0,b,h);
+  ctx.fillRect(w-b,0,b,h);
+  ctx.globalAlpha = 1;
 
-        // sanity “wash”: when low sanity, tint toward accent
-        const sanity = game.player.sanity / game.player.sanityMax;
-        const wash = clamp(1 - sanity, 0, 1);
-        if(wash > 0.02){
-          ctx.globalAlpha = wash * 0.10;
-          ctx.fillStyle = pal.playerAccent;
-          ctx.fillRect(0,0,w,h);
-          ctx.globalAlpha = 1;
-        }
-      }
+  // ✅ SAFE sanity access (player may not exist in menu/gameover)
+  const sanity = game.player ? (game.player.sanity / game.player.sanityMax) : 1;
+  const wash = Math.max(0, Math.min(1, 1 - sanity));
+  if(wash > 0.02){
+    ctx.globalAlpha = wash * 0.10;
+    ctx.fillStyle = pal.playerAccent;
+    ctx.fillRect(0,0,w,h);
+    ctx.globalAlpha = 1;
+  }
+}
     }
 
     /*********************************************************************
