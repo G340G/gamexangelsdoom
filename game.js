@@ -2129,6 +2129,10 @@
       }
       if(this.particles.length>800) this.particles.splice(0,this.particles.length-800);
     }
+    fx(x, y, kind, n = 1) {
+      this.fxSpawn(x, y, kind, n);
+    }
+     
     addDecal(x,y,type){
       this.decals.push(new Decal(x,y,type));
       if(this.decals.length>220) this.decals.splice(0,this.decals.length-220);
