@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ASYLUM FOG // LO-FI ANGELS</title>
+  <title>ASYLUM FOG // GROTESQUE WARD</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -22,12 +22,14 @@
         <div class="bar"><div id="sanFill" class="fill accent"></div></div>
 
         <div class="label" id="weaponLabel">Weapon: —</div>
+        <div class="label dim" id="objectiveLabel">Objective: —</div>
       </div>
 
       <div class="hudRight">
         <div class="label" id="depthLabel">DEPTH: 0m</div>
         <div class="label dim" id="modeLabel">ATMOSPHERE</div>
         <div class="label dim" id="zoneLabel">ZONE: INTAKE</div>
+        <div class="label dim" id="statusLabel"></div>
         <div class="label dim" id="hintLabel"></div>
       </div>
     </div>
@@ -35,33 +37,42 @@
     <!-- MENU -->
     <div id="menu" class="overlay">
       <div class="panel">
-        <h1>ASYLUM FOG <span>// no_build_vanilla</span></h1>
+        <h1>ASYLUM FOG <span>// grotesque_ward_build</span></h1>
         <p class="help">
-          Retro run-and-gun inside an asylum that’s “still operating” in the fog.<br>
-          NPCs are deranged and ambiguous: <b>friend</b>, <b>predator</b>, or both.<br>
-          <span class="dangerText">Rule:</span> shooting <b>Patient 07</b> (the green child) causes an immediate <b>Bad Ending</b>.
+          Lo-fi run-and-gun in a ward that doesn’t want you dead — it wants you <b>complicit</b>.<br>
+          NPCs are ambiguous. Enemies are hungry. The fog is curated.<br>
+          <span class="dangerText">Rule:</span> shooting <b>Patient 07</b> causes an immediate <b>Bad Ending</b>.
         </p>
 
         <div class="grid">
           <div>
             <label>Identity</label>
             <input id="nameInput" type="text" maxlength="18" value="SEEKER" placeholder="ENTER NAME">
+
             <div class="help">
               <span class="kbd">WASD</span> move/jump · <span class="kbd">Mouse</span> aim · <span class="kbd">Click</span> shoot ·
-              <span class="kbd">E</span> interact · <span class="kbd">1-3</span> swap weapons
+              <span class="kbd">E</span> interact · <span class="kbd">1-4</span> swap weapons
             </div>
 
-            <div class="row">
+            <label style="margin-top:12px;">Mission</label>
+            <select id="missionSelect" style="width:100%; box-sizing:border-box; background:#000; border:1px solid #444; color:#fff; padding:12px; font-family:inherit; outline:none;">
+              <option value="SURVIVE_120">Survive 2:00 (Frenetic Ward)</option>
+              <option value="SAVE_CHILD">Save Patient 07 (Touch Her)</option>
+              <option value="REACH_CHAPEL">Reach the Chapel (Depth Run)</option>
+            </select>
+
+            <div class="row" style="margin-top:10px;">
               <button id="loadSpritesBtn" class="btn secondary" type="button">Load Sprite Sheets (PNG)</button>
               <input id="spriteFiles" type="file" accept="image/png" multiple hidden>
               <span class="pill"><span id="assetDot" class="dot warn"></span><span id="assetText">Sprites: procedural placeholders</span></span>
             </div>
 
             <div class="help">
-              Optional: add PNG sprite sheets in <b>/assets/</b> or upload here at runtime.<br>
-              Naming recommended (each is a sprite sheet):<br>
+              Optional PNGs in <b>/assets/</b> (or upload at runtime). Recommended names:<br>
               <span class="monoSmall">
-player.png, angel.png, nurse.png, patient.png, child.png, chest.png, note.png, boss1.png, boss2.png, face1.png, face2.png
+player.png, angel.png, fiend.png, golem.png, crazy.png, wailer.png,
+nurse.png, patient.png, child.png, chest.png, note.png, bin.png, glass.png, potion.png,
+friend.png, boss1.png, boss2.png, face1.png, face2.png
               </span>
             </div>
           </div>
@@ -70,13 +81,13 @@ player.png, angel.png, nurse.png, patient.png, child.png, chest.png, note.png, b
             <label>Class</label>
             <div class="avatars">
               <button class="avi sel" data-avi="0">
-                <b>Vanguard</b><small>Rifle · stable · balanced</small>
+                <b>Vanguard</b><small>Rifle + Pistol</small>
               </button>
               <button class="avi" data-avi="1">
-                <b>Occultist</b><small>Needle · pierce · higher sanity</small>
+                <b>Occultist</b><small>Needle + Laser</small>
               </button>
               <button class="avi" data-avi="2">
-                <b>Heavy</b><small>Scatter · brutal · higher HP</small>
+                <b>Heavy</b><small>Scatter + Hammer</small>
               </button>
             </div>
 
@@ -84,11 +95,11 @@ player.png, angel.png, nurse.png, patient.png, child.png, chest.png, note.png, b
             <div class="settings">
               <label class="chk">
                 <input id="toggleConfusion" type="checkbox">
-                <span>Allow “Confusion” control-inversion effects (off by default)</span>
+                <span>Allow control inversion “Confusion” (off by default)</span>
               </label>
               <label class="chk">
                 <input id="toggleFaces" type="checkbox" checked>
-                <span>Allow face-flash hallucinations</span>
+                <span>Allow hallucination faces + past echoes</span>
               </label>
               <label class="chk">
                 <input id="toggleHardAudio" type="checkbox" checked>
@@ -97,9 +108,7 @@ player.png, angel.png, nurse.png, patient.png, child.png, chest.png, note.png, b
             </div>
 
             <button id="startBtn" class="btn primary">INITIATE</button>
-            <p class="help dim">
-              Audio starts on INITIATE (browser gesture requirement). No external files.
-            </p>
+            <p class="help dim">Audio starts on INITIATE (browser gesture requirement).</p>
           </div>
         </div>
       </div>
@@ -118,22 +127,24 @@ player.png, angel.png, nurse.png, patient.png, child.png, chest.png, note.png, b
       </div>
     </div>
 
-    <!-- GAME OVER -->
-    <div id="over" class="overlay hidden">
+    <!-- END -->
+    <div id="end" class="overlay hidden">
       <div class="panel center">
-        <h1 id="overTitle" class="dangerText">SIGNAL LOST</h1>
-        <div id="overBody" class="mono centerMono"></div>
+        <h1 id="endTitle">RUN COMPLETE</h1>
+        <div id="endBody" class="mono centerMono"></div>
         <div class="row" style="justify-content:center; margin-top:14px;">
           <button id="retryBtn" class="btn primary">REBOOT RUN</button>
           <button id="menuBtn" class="btn secondary">BACK TO MENU</button>
         </div>
       </div>
     </div>
+
   </div>
 
   <script src="./game.js"></script>
 </body>
 </html>
+
 
 
 
