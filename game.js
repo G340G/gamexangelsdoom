@@ -1,2815 +1,2571 @@
-/* ASYLUM FOG // GROTESQUE WARD
-   Vanilla JS + Canvas, no build. GitHub Pages ready.
-
-   Adds:
-   - More gore: blood, gibs, floor decals
-   - New enemy types: Fiend, Golem, Crazy, Grief Wailer
-   - Weapons: Pistol + Flesh Laser + unlockable Companion friend
-   - Ward props: bins, breakable glass, potions
-   - Substances: Wiggle (screen wobble), Memory (past echoes)
-   - Mission select: Survive 2:00 / Save Patient 07 / Reach Chapel
+/* game.js — LO-FI ANGELS: ASYLUM PROTOCOL (full rewrite)
+   - Vanilla JS, no external URLs, GitHub Pages ready
+   - Uses procedural pixel sprites, optional PNG sprites from local /assets/
 */
+
 (() => {
   "use strict";
 
-  /*************************
-   * DOM
-   *************************/
-  const $ = (id) => document.getElementById(id);
-  const UI = {
-    canvas: $("c"),
-    menu: $("menu"),
-    startBtn: $("startBtn"),
-    retryBtn: $("retryBtn"),
-    menuBtn: $("menuBtn"),
+  /********************************************************************
+   * Small helpers
+   ********************************************************************/
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const randi = (a, b) => (a + Math.floor(Math.random() * (b - a + 1)));
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const chance = (p) => Math.random() < p;
 
-    hud: $("hud"),
-    hpFill: $("hpFill"),
-    sanFill: $("sanFill"),
-    depthLabel: $("depthLabel"),
-    modeLabel: $("modeLabel"),
-    zoneLabel: $("zoneLabel"),
-    weaponLabel: $("weaponLabel"),
-    objectiveLabel: $("objectiveLabel"),
-    statusLabel: $("statusLabel"),
-    hintLabel: $("hintLabel"),
+  function aabb(ax, ay, aw, ah, bx, by, bw, bh) {
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
 
-    nameInput: $("nameInput"),
-    missionSelect: $("missionSelect"),
-    toggleConfusion: $("toggleConfusion"),
-    toggleFaces: $("toggleFaces"),
-    toggleHardAudio: $("toggleHardAudio"),
+  function dist(ax, ay, bx, by) {
+    return Math.hypot(ax - bx, ay - by);
+  }
 
-    loadSpritesBtn: $("loadSpritesBtn"),
-    spriteFiles: $("spriteFiles"),
-    assetDot: $("assetDot"),
-    assetText: $("assetText"),
+  function nowS() { return performance.now() / 1000; }
 
-    dialogue: $("dialogue"),
-    dlgTitle: $("dlgTitle"),
-    dlgSub: $("dlgSub"),
-    dlgBody: $("dlgBody"),
-    dlgChoices: $("dlgChoices"),
+  /********************************************************************
+   * Canvas + internal resolution
+   ********************************************************************/
+  const canvas = document.getElementById("game") || (() => {
+    const c = document.createElement("canvas");
+    c.id = "game";
+    document.body.appendChild(c);
+    return c;
+  })();
 
-    end: $("end"),
-    endTitle: $("endTitle"),
-    endBody: $("endBody"),
-  };
-
-  /*************************
-   * Canvas (low-res buffer)
-   *************************/
-  const canvas = UI.canvas;
-  const ctx = canvas.getContext("2d", { alpha: false });
-  ctx.imageSmoothingEnabled = false;
-
+  // Internal “game” resolution: pixelated look.
+  const RW = 480;
+  const RH = 270;
   const buf = document.createElement("canvas");
+  buf.width = RW;
+  buf.height = RH;
   const bctx = buf.getContext("2d", { alpha: false });
-  bctx.imageSmoothingEnabled = false;
+  const ctx = canvas.getContext("2d", { alpha: false });
 
-  let W=0, H=0;
-  let RW=384, RH=216;
+  let W = 0, H = 0, SCALE = 1, DX = 0, DY = 0;
 
   function resize() {
-    const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-    W = canvas.width = Math.max(1, (innerWidth * dpr) | 0);
-    H = canvas.height = Math.max(1, (innerHeight * dpr) | 0);
-
-    const aspect = innerWidth / Math.max(1, innerHeight);
-    RW = 384;
-    RH = Math.max(216, Math.floor(RW / Math.max(0.62, aspect)));
-
-    buf.width = RW;
-    buf.height = RH;
+    W = canvas.width = Math.floor(window.innerWidth);
+    H = canvas.height = Math.floor(window.innerHeight);
+    SCALE = Math.max(1, Math.floor(Math.min(W / RW, H / RH)));
+    const dw = RW * SCALE;
+    const dh = RH * SCALE;
+    DX = ((W - dw) / 2) | 0;
+    DY = ((H - dh) / 2) | 0;
     ctx.imageSmoothingEnabled = false;
     bctx.imageSmoothingEnabled = false;
   }
   window.addEventListener("resize", resize);
   resize();
 
-  /*************************
-   * Helpers
-   *************************/
-  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-  const lerp=(a,b,t)=>a+(b-a)*t;
-  const rand=(a=0,b=1)=>a+Math.random()*(b-a);
-  const randi=(a,b)=>(a+(Math.random()*(b-a+1)|0));
-  const chance=(p)=>Math.random()<p;
-
-  function aabb(ax,ay,aw,ah,bx,by,bw,bh){
-    return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
-  }
-  function norm(x,y){
-    const l=Math.hypot(x,y)||1;
-    return [x/l,y/l];
-  }
-
-  /*************************
-   * Input (stable; no random flips)
-   *************************/
-  const Input = {
-    keys: new Set(),
-    mouse: { nx:0.5, ny:0.5, down:false },
-    confusionEnabled:false,
-    confusionT:0,
-
-    down(code){ return this.keys.has(code); },
-    consume(code){ if(this.keys.has(code)){ this.keys.delete(code); return true; } return false; },
-    axisX(){
-      const raw = (this.down("KeyD")?1:0) - (this.down("KeyA")?1:0);
-      if (this.confusionEnabled && this.confusionT>0) return -raw;
-      return raw;
+  /********************************************************************
+   * Palette system (changes atmosphere)
+   ********************************************************************/
+  const PALETTES = {
+    ward: {
+      bg: "#050506",
+      fog: "rgba(0,0,0,0.92)",
+      ground: "#0b0b0f",
+      solid: "#15151b",
+      ui: "#cfcfe6",
+      accent: "#7d3cff",
+      danger: "#ff2a2a",
+      child: "#00ffaa",
+      blood: "#b0122a",
+      goreDark: "#4a0b18",
+      glass: "#7de7ff",
+      sick: "#a5ff5a",
+      textDim: "#8d8da6",
     },
-    jump(){ return this.down("KeyW"); },
-    interact(){ return this.down("KeyE"); }
+    chapel: {
+      bg: "#030304",
+      fog: "rgba(0,0,0,0.95)",
+      ground: "#08080b",
+      solid: "#13131a",
+      ui: "#e2e2ea",
+      accent: "#ffcc00",
+      danger: "#ff3355",
+      child: "#00ffaa",
+      blood: "#b0122a",
+      goreDark: "#4a0b18",
+      glass: "#9bf2ff",
+      sick: "#e5ff7a",
+      textDim: "#9a9ab6",
+    },
+    meltdown: {
+      bg: "#040307",
+      fog: "rgba(0,0,0,0.90)",
+      ground: "#090812",
+      solid: "#190f2c",
+      ui: "#f0e9ff",
+      accent: "#ff3cff",
+      danger: "#ff2a2a",
+      child: "#00ffaa",
+      blood: "#c10f33",
+      goreDark: "#59061a",
+      glass: "#b6f6ff",
+      sick: "#b9ff6a",
+      textDim: "#b2a6c9",
+    }
   };
 
-  window.addEventListener("keydown", (e)=>{
-    if(["KeyW","KeyA","KeyS","KeyD","KeyE","Space","Digit1","Digit2","Digit3","Digit4"].includes(e.code)) e.preventDefault();
-    Input.keys.add(e.code);
-  }, { passive:false });
-  window.addEventListener("keyup", (e)=>Input.keys.delete(e.code));
+  /********************************************************************
+   * UI injection (so you don’t depend on existing HTML)
+   ********************************************************************/
+  function injectBaseCSS() {
+    const css = `
+      html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+      #game{position:fixed;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block;background:#000}
+      .gOverlay{position:fixed;inset:0;display:grid;place-items:center;z-index:50;background:rgba(0,0,0,.86)}
+      .gPanel{width:min(900px,92vw);background:#0f0f14;border:1px solid #2b2b35;box-shadow:0 0 32px rgba(0,0,0,.6);padding:18px 18px 16px;position:relative}
+      .gTitle{color:#e9e9f3;letter-spacing:3px;text-transform:uppercase;font-size:18px;margin:0 0 10px}
+      .gSub{color:#8a8aa2;font-size:12px;line-height:1.6;margin:0 0 12px}
+      .gRow{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .gRow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+      .gField{display:grid;gap:6px}
+      .gLabel{color:#8d8da8;font-size:11px;letter-spacing:1px}
+      .gInput,.gSelect{background:#000;border:1px solid #333;color:#fff;padding:10px;font:inherit;outline:none}
+      .gInput:focus,.gSelect:focus{border-color:#7d3cff;box-shadow:0 0 0 2px rgba(125,60,255,.15)}
+      .gBtn{background:#000;border:1px solid #333;color:#e9e9f3;padding:10px 14px;font:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px}
+      .gBtn:hover{border-color:#7d3cff;box-shadow:0 0 14px rgba(125,60,255,.25)}
+      .gBtnDanger:hover{border-color:#ff2a2a;box-shadow:0 0 14px rgba(255,42,42,.25)}
+      .gCard{border:1px solid #2b2b35;background:#0a0a0f;padding:10px;cursor:pointer;opacity:.75}
+      .gCard:hover{opacity:1}
+      .gCard.sel{border-color:#7d3cff;opacity:1;background:#130c1f}
+      .gTiny{color:#7f7f98;font-size:11px;line-height:1.6}
+      .gHud{position:fixed;left:12px;right:12px;top:10px;z-index:40;display:flex;justify-content:space-between;pointer-events:none;mix-blend-mode:difference}
+      .gBars{display:grid;gap:6px}
+      .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase}
+      .gBar{width:120px;height:5px;background:#2a2a33;position:relative}
+      .gFill{height:100%;width:100%}
+      .gRight{text-align:right}
+      .gFade{opacity:.75}
+      .gDialog{white-space:pre-wrap;color:#d7d7e5;font-size:13px;line-height:1.6;border-left:2px solid #7d3cff;padding-left:12px;margin-top:10px}
+      .gChoice{display:grid;gap:8px;margin-top:12px}
+      .gChoice button{pointer-events:auto}
+      .gCrt{position:fixed;inset:0;z-index:35;pointer-events:none;
+        background:
+          linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.22) 50%),
+          linear-gradient(90deg, rgba(255,0,0,0.05), rgba(0,255,0,0.02), rgba(0,0,255,0.05));
+        background-size:100% 2px, 3px 100%;
+        box-shadow:inset 0 0 90px rgba(0,0,0,.7);
+        opacity:.9;
+      }
+    `;
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
 
-  canvas.addEventListener("mousemove",(e)=>{
-    const r=canvas.getBoundingClientRect();
-    Input.mouse.nx = clamp((e.clientX-r.left)/Math.max(1,r.width),0,1);
-    Input.mouse.ny = clamp((e.clientY-r.top)/Math.max(1,r.height),0,1);
-  });
-  canvas.addEventListener("mousedown", ()=>Input.mouse.down=true);
-  window.addEventListener("mouseup", ()=>Input.mouse.down=false);
+  function makeUI() {
+    injectBaseCSS();
 
-  /*************************
-   * Palette
-   *************************/
-  const PAL = {
-    bg:"#050505",
-    floor:"#09090d",
-    wall:"#0f0f16",
-    fog:"#0b0b12",
-    light:"#eaeaf2",
-    accent:"#7d3cff",
-    danger:"#ff2a2a",
-    sick:"#a2ffcf",
-    rust:"#5a0b17",
-    paper:"#f1f1ff",
-    glass:"#89b7ff",
-    potion:"#ffb24a",
-    slime:"#39ffb0",
-  };
+    const crt = document.createElement("div");
+    crt.className = "gCrt";
+    document.body.appendChild(crt);
 
-  /*************************
-   * Assets + Sprite system
-   *************************/
-  class Assets {
-    constructor(){
-      this.images = new Map();
-      this.manifest = {
-        player:"assets/player.png",
-        angel:"assets/angel.png",
-        fiend:"assets/fiend.png",
-        golem:"assets/golem.png",
-        crazy:"assets/crazy.png",
-        wailer:"assets/wailer.png",
-        nurse:"assets/nurse.png",
-        patient:"assets/patient.png",
-        child:"assets/child.png",
-        chest:"assets/chest.png",
-        note:"assets/note.png",
-        bin:"assets/bin.png",
-        glass:"assets/glass.png",
-        potion:"assets/potion.png",
-        friend:"assets/friend.png",
-        boss1:"assets/boss1.png",
-        boss2:"assets/boss2.png",
-        face1:"assets/face1.png",
-        face2:"assets/face2.png",
+    const hud = document.createElement("div");
+    hud.className = "gHud";
+    hud.innerHTML = `
+      <div class="gBars">
+        <div>
+          <div class="gStat">HP</div>
+          <div class="gBar"><div id="uiHp" class="gFill" style="background:#ff2a2a"></div></div>
+        </div>
+        <div>
+          <div class="gStat">SANITY</div>
+          <div class="gBar"><div id="uiSan" class="gFill" style="background:#7d3cff"></div></div>
+        </div>
+        <div class="gStat gFade" id="uiStatus"></div>
+      </div>
+      <div class="gRight">
+        <div class="gStat" id="uiMission"></div>
+        <div class="gStat" id="uiTimer"></div>
+        <div class="gStat gFade" id="uiMode"></div>
+      </div>
+    `;
+    document.body.appendChild(hud);
+
+    const menu = document.createElement("div");
+    menu.className = "gOverlay";
+    menu.id = "menu";
+    menu.innerHTML = `
+      <div class="gPanel">
+        <h1 class="gTitle">LO-FI ANGELS // ASYLUM PROTOCOL</h1>
+        <p class="gSub">
+          WASD move, SPACE jump, Mouse aim, Click shoot. E interact. Q weapon swap.
+          <br><span style="color:#ff2a2a">Rule:</span> Do not shoot the Daughter. Touch her to save her (mission-dependent).
+        </p>
+        <div class="gRow">
+          <div class="gField">
+            <div class="gLabel">IDENTITY</div>
+            <input id="inName" class="gInput" maxlength="14" value="SEEKER" />
+            <div class="gTiny">
+              <b>Experimental effects</b> are applied as timed status effects (no random control flipping every frame).
+            </div>
+          </div>
+          <div class="gField">
+            <div class="gLabel">AVATAR</div>
+            <div class="gRow3" id="aviRow"></div>
+          </div>
+        </div>
+
+        <div style="height:10px"></div>
+
+        <div class="gRow">
+          <div class="gField">
+            <div class="gLabel">MISSION</div>
+            <select id="inMission" class="gSelect">
+              <option value="SURVIVE_120">Survive 2:00</option>
+              <option value="SAVE_CHILD">Save the Daughter (touch her)</option>
+              <option value="REACH_EXIT">Reach the Exit</option>
+            </select>
+            <div class="gTiny">
+              Difficulty is tuned to be winnable. Enemy damage scales gently, with mercy spawns (HP/SAN) when you struggle.
+            </div>
+          </div>
+          <div class="gField">
+            <div class="gLabel">SETTINGS</div>
+            <label class="gTiny"><input id="optImages" type="checkbox" checked> Allow local PNG sprites (optional)</label><br>
+            <label class="gTiny"><input id="optConfusion" type="checkbox" checked> Allow confusion effects</label><br>
+            <label class="gTiny"><input id="optHardAudio" type="checkbox" checked> Abrasive audio</label>
+          </div>
+        </div>
+
+        <div style="height:12px"></div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button id="btnStart" class="gBtn">INITIATE</button>
+          <button id="btnMute" class="gBtn gBtnDanger">AUDIO: OFF</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(menu);
+
+    const dialog = document.createElement("div");
+    dialog.className = "gOverlay";
+    dialog.id = "dialog";
+    dialog.style.display = "none";
+    dialog.innerHTML = `
+      <div class="gPanel">
+        <h1 class="gTitle" id="dlgTitle">ENCOUNTER</h1>
+        <div class="gDialog" id="dlgBody"></div>
+        <div class="gChoice" id="dlgChoices"></div>
+        <div style="margin-top:10px" class="gTiny">Press SPACE to pick the first choice quickly.</div>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+
+    const end = document.createElement("div");
+    end.className = "gOverlay";
+    end.id = "end";
+    end.style.display = "none";
+    end.innerHTML = `
+      <div class="gPanel" style="text-align:center">
+        <h1 class="gTitle" id="endTitle">SIGNAL LOST</h1>
+        <div class="gDialog" id="endBody" style="border:none;padding-left:0"></div>
+        <div style="margin-top:16px;display:flex;gap:10px;justify-content:center">
+          <button class="gBtn" id="btnRestart">REBOOT</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(end);
+
+    // Avatar cards
+    const avatars = [
+      { id: 0, name: "Vanguard", desc: "Balanced. Reliable recoil control." },
+      { id: 1, name: "Occultist", desc: "Higher sanity. Stranger visions." },
+      { id: 2, name: "Heavy", desc: "More HP. Slower, sturdier." },
+    ];
+    const aviRow = menu.querySelector("#aviRow");
+    let selAvi = 0;
+    avatars.forEach(a => {
+      const card = document.createElement("div");
+      card.className = "gCard" + (a.id === 0 ? " sel" : "");
+      card.innerHTML = `<div style="color:#fff;font-weight:700">${a.name}</div><div class="gTiny">${a.desc}</div>`;
+      card.onclick = () => {
+        selAvi = a.id;
+        [...aviRow.children].forEach(c => c.classList.remove("sel"));
+        card.classList.add("sel");
       };
-    }
-    get(key){ return this.images.get(key)||null; }
-    async tryLoadManifest(){
-      const keys=Object.keys(this.manifest);
-      await Promise.all(keys.map(k=>this._loadOne(k,this.manifest[k])));
-    }
-    _loadOne(key,url){
-      return new Promise((resolve)=>{
-        const img=new Image();
-        img.onload=()=>{ this.images.set(key,img); resolve(true); };
-        img.onerror=()=>resolve(false);
-        img.src=url;
-      });
-    }
-    async loadFromFiles(fileList){
-      const files=Array.from(fileList||[]);
-      for(const f of files){
-        if(!f.type.includes("png")) continue;
-        const name=(f.name||"").toLowerCase();
-        const key = [
-          "player","angel","fiend","golem","crazy","wailer","nurse","patient","child","chest","note",
-          "bin","glass","potion","friend","boss1","boss2","face1","face2"
-        ].find(k=>name.includes(k));
-        if(!key) continue;
+      aviRow.appendChild(card);
+    });
 
-        const dataUrl = await new Promise((resolve)=>{
-          const fr=new FileReader();
-          fr.onload=()=>resolve(fr.result);
-          fr.readAsDataURL(f);
-        });
+    return {
+      crt,
+      hud,
+      menu,
+      dialog,
+      end,
+      inName: menu.querySelector("#inName"),
+      inMission: menu.querySelector("#inMission"),
+      optImages: menu.querySelector("#optImages"),
+      optConfusion: menu.querySelector("#optConfusion"),
+      optHardAudio: menu.querySelector("#optHardAudio"),
+      btnStart: menu.querySelector("#btnStart"),
+      btnMute: menu.querySelector("#btnMute"),
+      uiHp: hud.querySelector("#uiHp"),
+      uiSan: hud.querySelector("#uiSan"),
+      uiStatus: hud.querySelector("#uiStatus"),
+      uiMission: hud.querySelector("#uiMission"),
+      uiTimer: hud.querySelector("#uiTimer"),
+      uiMode: hud.querySelector("#uiMode"),
+      dlgTitle: dialog.querySelector("#dlgTitle"),
+      dlgBody: dialog.querySelector("#dlgBody"),
+      dlgChoices: dialog.querySelector("#dlgChoices"),
+      endTitle: end.querySelector("#endTitle"),
+      endBody: end.querySelector("#endBody"),
+      btnRestart: end.querySelector("#btnRestart"),
+      getSelectedAvatar: () => selAvi
+    };
+  }
 
-        await new Promise((resolve)=>{
-          const img=new Image();
-          img.onload=()=>{ this.images.set(key,img); resolve(true); };
-          img.onerror=()=>resolve(false);
-          img.src=dataUrl;
-        });
+  const UI = makeUI();
+
+  /********************************************************************
+   * Input (NO “random left/right flip per frame” — only timed effects)
+   ********************************************************************/
+  const Input = {
+    keys: Object.create(null),
+    mouse: { x: 0, y: 0, down: false },
+    // “confusion” effect: invert left/right + drift aim, but stable for its duration
+    confusionEnabled: true,
+    confusionT: 0,
+    // snap for one-press actions
+    _pressed: Object.create(null),
+    _justPressed(code) {
+      const v = !!this.keys[code];
+      const was = !!this._pressed[code];
+      this._pressed[code] = v;
+      return v && !was;
+    },
+    readDir() {
+      // base
+      let left = !!this.keys["KeyA"];
+      let right = !!this.keys["KeyD"];
+      // timed confusion: invert left/right (consistently)
+      if (this.confusionEnabled && this.confusionT > 0) {
+        const tmp = left; left = right; right = tmp;
       }
-    }
-  }
-  const assets = new Assets();
+      return (right ? 1 : 0) - (left ? 1 : 0);
+    },
+    wantJump() { return this._justPressed("Space") || this._justPressed("KeyW"); },
+    wantInteract() { return this._justPressed("KeyE"); },
+    wantSwap() { return this._justPressed("KeyQ"); },
+  };
 
-  class Sprite {
-    constructor(img, fw, fh, frames, fps=10){
-      this.img=img; this.fw=fw; this.fh=fh; this.frames=frames; this.fps=fps;
-    }
-    draw(ctx,x,y,t,flip=false,scale=1,alpha=1,frameOverride=null){
-      if(!this.img) return;
-      const f = frameOverride!==null ? frameOverride : (Math.floor(t*this.fps)%this.frames);
-      const sx=f*this.fw;
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      ctx.translate(x|0,y|0);
-      if(flip){ ctx.scale(-1,1); ctx.translate(-this.fw*scale,0); }
-      ctx.drawImage(this.img, sx,0,this.fw,this.fh, 0,0,(this.fw*scale)|0,(this.fh*scale)|0);
-      ctx.restore();
-    }
-  }
+  window.addEventListener("keydown", (e) => { Input.keys[e.code] = true; });
+  window.addEventListener("keyup", (e) => { Input.keys[e.code] = false; });
 
-  /*************************
-   * Procedural pixel-art sheets (fallbacks)
-   *************************/
-  function makeSheet(key, fw, fh, frames, drawFrame){
-    const c=document.createElement("canvas");
-    c.width=fw*frames; c.height=fh;
-    const x=c.getContext("2d");
-    x.imageSmoothingEnabled=false;
-    for(let i=0;i<frames;i++){
-      x.save(); x.translate(i*fw,0);
-      drawFrame(x,i,frames);
-      x.restore();
-    }
-    assets.images.set(key,c);
-  }
-  function dots(x,w,h,density,color){
-    x.fillStyle=color;
-    const n=Math.floor(w*h*density);
-    for(let i=0;i<n;i++) x.fillRect((Math.random()*w)|0,(Math.random()*h)|0,1,1);
-  }
-  function faceSheet(key){
-    makeSheet(key, 96, 64, 1, (x)=>{
-      x.clearRect(0,0,96,64);
-      x.fillStyle="#000"; x.fillRect(0,0,96,64);
-      x.globalAlpha=0.9;
-      x.fillStyle="#101018"; x.fillRect(8,8,80,48);
-      x.globalAlpha=1;
-      x.fillStyle="#1b1b24"; x.fillRect(22,20,12,6);
-      x.fillRect(62,20,12,6);
-      x.fillStyle=PAL.paper; x.fillRect(26,22,4,2); x.fillRect(66,22,4,2);
-      x.fillStyle=PAL.rust; x.fillRect(44,28,8,4);
-      x.globalAlpha=0.35;
-      for(let i=0;i<30;i++){
-        x.fillStyle = (i%2)?PAL.accent:PAL.danger;
-        x.fillRect(randi(0,95), randi(0,63), randi(1,3), 1);
-      }
-      x.globalAlpha=1;
-      dots(x,96,64,0.07,"#00000022");
-      dots(x,96,64,0.02,"#ffffff10");
-    });
-  }
+  window.addEventListener("mousemove", (e) => {
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) / Math.max(1, r.width);
+    const my = (e.clientY - r.top) / Math.max(1, r.height);
+    // map to internal buffer space
+    Input.mouse.x = clamp(mx, 0, 1) * RW;
+    Input.mouse.y = clamp(my, 0, 1) * RH;
+  });
 
-  function buildProceduralSprites(){
-    // Player
-    makeSheet("player",24,36,6,(x,i)=>{
-      x.clearRect(0,0,24,36);
-      const step=Math.sin((i/6)*Math.PI*2);
-      // coat
-      x.fillStyle="#0a0a0f"; x.fillRect(6,9,12,22);
-      x.fillStyle=PAL.light; x.fillRect(7,10,10,18);
-      x.fillStyle="#161620"; x.fillRect(7,17,10,3);
-      // head
-      x.fillStyle="#101018"; x.fillRect(8,6,8,6);
-      // eye
-      x.fillStyle=PAL.accent; x.fillRect(14,8,2,1);
-      // legs
-      x.fillStyle="#0c0c12";
-      x.fillRect(8+(step>0?1:0),28,3,6);
-      x.fillRect(13+(step<0?1:0),28,3,6);
-      // pistol holster
-      x.fillStyle="#3a3a4a"; x.fillRect(6,22,2,4);
-      dots(x,24,36,0.035,"#00000022");
-      dots(x,24,36,0.02,"#ffffff10");
-    });
+  window.addEventListener("mousedown", () => { Input.mouse.down = true; });
+  window.addEventListener("mouseup", () => { Input.mouse.down = false; });
 
-    // Angel (baseline flyer)
-    makeSheet("angel",28,28,6,(x,i)=>{
-      x.clearRect(0,0,28,28);
-      const flap=Math.sin((i/6)*Math.PI*2);
-      // wings
-      x.fillStyle=PAL.danger;
-      x.fillRect(1,10,8,4+((flap*3)|0));
-      x.fillRect(19,10,8,4+((-flap*3)|0));
-      // torso
-      x.fillStyle="#2a0b10"; x.fillRect(10,7,8,14);
-      // eyes
-      x.fillStyle=PAL.paper; x.fillRect(12,11,2,1); x.fillRect(14,11,2,1);
-      // spikes
-      x.fillStyle="#500f18";
-      x.fillRect(9,6,1,2); x.fillRect(18,6,1,2);
-      dots(x,28,28,0.06,"#00000022");
-    });
-
-    // Fiend: angry eyes + spikes (menacing)
-    makeSheet("fiend",32,32,6,(x,i)=>{
-      x.clearRect(0,0,32,32);
-      const jerk=Math.sin((i/6)*Math.PI*2);
-      // body mass
-      x.fillStyle="#0b0b12"; x.fillRect(9,10,14,14);
-      x.fillStyle="#1a1a25"; x.fillRect(10,11,12,12);
-      // spikes
-      x.fillStyle=PAL.danger;
-      for(let k=0;k<6;k++){
-        x.fillRect(8+k*4, 8, 1, 3);
-      }
-      x.fillRect(7,14,2,1); x.fillRect(23,14,2,1);
-      // angry eyes
-      x.fillStyle=PAL.paper;
-      x.fillRect(13,15,2,1);
-      x.fillRect(17,15,2,1);
-      x.fillStyle=PAL.danger;
-      x.fillRect(13,16,1,1); x.fillRect(18,16,1,1);
-      // mouth
-      x.fillStyle="#000"; x.fillRect(15,19,2,1);
-      // jitter arms
-      x.fillStyle="#14141f";
-      x.fillRect(6,16+((jerk*1)|0),3,2);
-      x.fillRect(23,16+(((-jerk)*1)|0),3,2);
-      dots(x,32,32,0.06,"#00000022");
-      dots(x,32,32,0.02,"#ffffff10");
-    });
-
-    // Golem: slow, heavy, high life
-    makeSheet("golem",36,36,6,(x,i)=>{
-      x.clearRect(0,0,36,36);
-      const bob=Math.sin((i/6)*Math.PI*2);
-      x.fillStyle="#0a0a10"; x.fillRect(10,8,16,22);
-      x.fillStyle="#171722"; x.fillRect(11,10,14,18);
-      // plates
-      x.fillStyle="#232334";
-      x.fillRect(12,12,12,3);
-      x.fillRect(12,17,12,3);
-      x.fillRect(12,22,12,3);
-      // eye core
-      x.fillStyle=PAL.accent;
-      x.fillRect(17,16+((bob*1)|0),2,2);
-      // shoulders
-      x.fillStyle="#101018";
-      x.fillRect(6,12,6,6);
-      x.fillRect(24,12,6,6);
-      // feet
-      x.fillStyle="#09090d";
-      x.fillRect(12,30,6,3); x.fillRect(18,30,6,3);
-      dots(x,36,36,0.07,"#00000022");
-    });
-
-    // Crazy: slender fast, low hp, low dmg
-    makeSheet("crazy",24,34,6,(x,i)=>{
-      x.clearRect(0,0,24,34);
-      const step=Math.sin((i/6)*Math.PI*2);
-      // thin torso
-      x.fillStyle="#0b0b10"; x.fillRect(10,9,4,18);
-      x.fillStyle="#151520"; x.fillRect(11,10,2,16);
-      // head
-      x.fillStyle="#0f0f18"; x.fillRect(9,5,6,5);
-      // eyes (wild)
-      x.fillStyle=PAL.paper; x.fillRect(10,7,1,1); x.fillRect(13,7,1,1);
-      x.fillStyle=PAL.danger; x.fillRect(11,7,1,1); x.fillRect(12,7,1,1);
-      // arms
-      x.fillStyle="#101018";
-      x.fillRect(6,14+((step>0?1:0)),4,2);
-      x.fillRect(14,14+((step<0?1:0)),4,2);
-      // legs
-      x.fillStyle="#0c0c12";
-      x.fillRect(9+(step>0?1:0),27,2,6);
-      x.fillRect(13+(step<0?1:0),27,2,6);
-      dots(x,24,34,0.05,"#00000022");
-    });
-
-    // Wailer: grief madness aura
-    makeSheet("wailer",32,32,6,(x,i)=>{
-      x.clearRect(0,0,32,32);
-      const swell=0.5+0.5*Math.sin((i/6)*Math.PI*2);
-      // body
-      x.globalAlpha=0.85;
-      x.fillStyle="#0b0b12"; x.fillRect(11,8,10,18);
-      x.fillStyle="#11111a"; x.fillRect(12,9,8,16);
-      x.globalAlpha=1;
-      // hollow mouth
-      x.fillStyle="#000"; x.fillRect(15,18,2,4);
-      // tear eyes
-      x.fillStyle=PAL.paper; x.fillRect(13,14,2,1); x.fillRect(17,14,2,1);
-      x.fillStyle=PAL.rust; x.fillRect(14,15,1,3); x.fillRect(18,15,1,3);
-      // aura hint
-      x.globalAlpha=0.25+0.25*swell;
-      x.fillStyle=PAL.accent;
-      x.fillRect(6,6,20,1);
-      x.fillRect(6,26,20,1);
-      x.globalAlpha=1;
-      dots(x,32,32,0.06,"#00000022");
-    });
-
-    // Nurse / Patient / Child / Chest / Note reused if present else basic
-    makeSheet("nurse",24,34,6,(x,i)=>{
-      x.clearRect(0,0,24,34);
-      const sway=Math.sin((i/6)*Math.PI*2);
-      x.fillStyle="#0c0c12"; x.fillRect(7,7,10,24);
-      x.fillStyle="#dcdcea"; x.fillRect(8,9,8,18);
-      x.fillStyle="#f1f1ff"; x.fillRect(9,7,6,4);
-      x.fillStyle=PAL.accent; x.fillRect(14,9,1,1);
-      x.fillStyle="#6e6e80"; x.fillRect(3,14+((sway*1)|0),6,2);
-      dots(x,24,34,0.045,"#00000022");
-    });
-    makeSheet("patient",24,34,6,(x,i)=>{
-      x.clearRect(0,0,24,34);
-      x.fillStyle="#09090f"; x.fillRect(7,7,10,24);
-      x.fillStyle="#b8b8c6"; x.fillRect(8,10,8,14);
-      x.fillStyle="#000"; x.fillRect(9,8,6,3);
-      x.fillStyle=PAL.rust; x.fillRect(12,16,2,2);
-      const step=Math.sin((i/6)*Math.PI*2);
-      x.fillStyle="#101018";
-      x.fillRect(8+(step>0?1:0),28,3,6);
-      dots(x,24,34,0.05,"#00000022");
-    });
-    makeSheet("child",22,30,4,(x,i)=>{
-      x.clearRect(0,0,22,30);
-      const bob=Math.sin((i/4)*Math.PI*2);
-      x.fillStyle=PAL.sick;
-      x.fillRect(9,6+((bob*1)|0),4,4);
-      x.beginPath();
-      x.moveTo(11,10); x.lineTo(18,26); x.lineTo(4,26);
-      x.closePath(); x.fill();
-      x.fillStyle="#003a22";
-      x.fillRect(9,9,1,1); x.fillRect(12,9,1,1);
-      dots(x,22,30,0.03,"#ffffff10");
-    });
-    makeSheet("chest",26,18,4,(x,i)=>{
-      x.clearRect(0,0,26,18);
-      const pulse=Math.sin((i/4)*Math.PI*2);
-      x.fillStyle="#0b0b11"; x.fillRect(3,6,20,10);
-      x.fillStyle="#181820"; x.fillRect(4,7,18,4);
-      x.fillStyle=PAL.potion; x.fillRect(6,11,14,2);
-      x.fillStyle="#2a2a3a"; x.fillRect(12,10,2,3);
-      x.globalAlpha=0.3+pulse*0.2;
-      x.fillStyle=PAL.potion; x.fillRect(18,6,2,2);
-      x.globalAlpha=1;
-      dots(x,26,18,0.06,"#00000022");
-    });
-    makeSheet("note",14,12,2,(x,i)=>{
-      x.clearRect(0,0,14,12);
-      x.fillStyle=PAL.paper; x.fillRect(1,1,12,10);
-      x.fillStyle="#2a2a3a"; x.fillRect(10,2,2,2);
-      dots(x,14,12,0.08,"#00000014");
-    });
-
-    // Ward props
-    makeSheet("bin",24,24,2,(x,i)=>{
-      x.clearRect(0,0,24,24);
-      if(i===1){
-        x.globalAlpha=0.8;
-        x.fillStyle="#0b0b11"; x.fillRect(6,12,12,8);
-        x.fillStyle="#1c1c26"; x.fillRect(7,13,10,3);
-        x.fillStyle=PAL.rust; x.fillRect(9,16,2,1);
-        x.globalAlpha=1;
-      } else {
-        x.fillStyle="#0b0b11"; x.fillRect(6,8,12,14);
-        x.fillStyle="#1c1c26"; x.fillRect(7,9,10,10);
-        x.fillStyle="#101018"; x.fillRect(6,6,12,3);
-        x.fillStyle="#2b2b3a"; x.fillRect(8,12,8,2);
-        dots(x,24,24,0.06,"#00000022");
-      }
-    });
-
-    makeSheet("glass",16,24,2,(x,i)=>{
-      x.clearRect(0,0,16,24);
-      if(i===0){
-        x.globalAlpha=0.25;
-        x.fillStyle=PAL.glass; x.fillRect(3,3,10,18);
-        x.globalAlpha=0.8;
-        x.strokeStyle=PAL.glass; x.strokeRect(3.5,3.5,9,17);
-        x.globalAlpha=1;
-        dots(x,16,24,0.03,"#ffffff22");
-      } else {
-        x.globalAlpha=0.18;
-        x.fillStyle=PAL.glass; x.fillRect(4,6,8,10);
-        x.globalAlpha=1;
-        x.fillStyle="#fff";
-        x.fillRect(2,14,1,1); x.fillRect(12,10,1,1);
-        x.fillRect(7,4,1,1);
-        dots(x,16,24,0.06,"#00000022");
-      }
-    });
-
-    makeSheet("potion",16,16,2,(x,i)=>{
-      x.clearRect(0,0,16,16);
-      x.fillStyle="#0b0b11"; x.fillRect(6,2,4,3);
-      x.fillStyle=i===0?PAL.potion:PAL.slime;
-      x.fillRect(5,5,6,9);
-      x.fillStyle="#1c1c26"; x.fillRect(6,6,4,7);
-      x.fillStyle="#fff"; x.globalAlpha=0.25;
-      x.fillRect(5,6,1,4);
-      x.globalAlpha=1;
-      dots(x,16,16,0.05,"#00000022");
-    });
-
-    // Friend companion
-    makeSheet("friend",20,20,6,(x,i)=>{
-      x.clearRect(0,0,20,20);
-      const orb = Math.sin((i/6)*Math.PI*2);
-      x.fillStyle="#0b0b11"; x.fillRect(6,6,8,8);
-      x.fillStyle=PAL.accent; x.fillRect(9,9,2,2);
-      x.fillStyle=PAL.paper; x.globalAlpha=0.25+0.2*orb;
-      x.fillRect(2,9,4,1); x.fillRect(14,9,4,1);
-      x.fillRect(9,2,1,4); x.fillRect(9,14,1,4);
-      x.globalAlpha=1;
-      dots(x,20,20,0.06,"#00000022");
-    });
-
-    // Boss sheets (simple fallback)
-    makeSheet("boss1",64,64,6,(x,i)=>{
-      x.clearRect(0,0,64,64);
-      const r=10+Math.sin((i/6)*Math.PI*2)*2;
-      x.fillStyle="#0d0d16"; x.fillRect(16,12,32,44);
-      x.strokeStyle=PAL.accent;
-      x.beginPath();
-      for(let k=0;k<10;k++){
-        const a=k*(Math.PI*2/10)+i*0.25;
-        const cx=32, cy=20;
-        x.moveTo(cx,cy);
-        x.lineTo(cx+Math.cos(a)*(14+r), cy+Math.sin(a)*10);
-      }
-      x.stroke();
-      x.fillStyle=PAL.danger; x.fillRect(30,28,4,10);
-      dots(x,64,64,0.06,"#00000022");
-    });
-    makeSheet("boss2",72,56,6,(x,i)=>{
-      x.clearRect(0,0,72,56);
-      const wob=Math.sin((i/6)*Math.PI*2);
-      x.fillStyle="#0b0b12"; x.fillRect(14,10,44,30);
-      x.fillStyle=PAL.accent; x.fillRect(34,22,4,4);
-      x.fillStyle=PAL.danger;
-      x.fillRect(18,16,6,6); x.fillRect(48,16,6,6);
-      x.strokeStyle="#3a3a55";
-      x.beginPath();
-      x.moveTo(36,40); x.lineTo(28,52+((wob*2)|0));
-      x.moveTo(36,40); x.lineTo(44,52+(((-wob)*2)|0));
-      x.stroke();
-      dots(x,72,56,0.07,"#00000022");
-    });
-
-    // Faces for hallucinations / past echoes
-    faceSheet("face1");
-    faceSheet("face2");
-  }
-  buildProceduralSprites();
-
-  function updateAssetUI(){
-    UI.assetDot.className = "dot ok";
-    UI.assetText.textContent = `Sprites ready (PNG override optional)`;
-  }
-  updateAssetUI();
-
-  /*************************
-   * Audio (procedural, abrasive)
-   *************************/
+  /********************************************************************
+   * Audio engine (procedural abrasive horror)
+   ********************************************************************/
   const AudioSys = {
-    ctx:null, master:null, started:false,
-    filter:null, drive:null,
-    droneG:null, noiseG:null, sirenO:null, sirenG:null,
-    hard:true,
+    ctx: null,
+    master: null,
+    hard: true,
+    muted: true,
+    intensity: 0.25,
+    mode: "atmosphere",
+    _nodes: null,
 
-    start(){
-      if(this.started) return;
-      const AC=window.AudioContext||window.webkitAudioContext;
-      this.ctx=new AC();
-      this.master=this.ctx.createGain();
-      this.master.gain.value=0.26;
+    async init() {
+      if (this.ctx) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.0;
       this.master.connect(this.ctx.destination);
 
-      this.filter=this.ctx.createBiquadFilter();
-      this.filter.type="lowpass";
-      this.filter.frequency.value=420;
-      this.filter.Q.value=0.9;
-      this.filter.connect(this.master);
+      // build noise + drone + pulses
+      const noiseBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * 0.8;
 
-      this.drive=this.ctx.createWaveShaper();
-      this.drive.curve=this._dist(260);
-      this.drive.oversample="4x";
-      this.drive.connect(this.filter);
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = noiseBuf;
+      noise.loop = true;
 
-      // drone
-      const o1=this.ctx.createOscillator();
-      const o2=this.ctx.createOscillator();
-      o1.type="sawtooth"; o2.type="triangle";
-      o1.frequency.value=44; o2.frequency.value=56; o2.detune.value=-19;
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.value = 0.0;
 
-      this.droneG=this.ctx.createGain();
-      this.droneG.gain.value=0.10;
-      o1.connect(this.droneG); o2.connect(this.droneG);
-      this.droneG.connect(this.drive);
+      const drone1 = this.ctx.createOscillator();
+      drone1.type = "sawtooth";
+      drone1.frequency.value = 52;
 
-      // noise
-      const nlen=2*this.ctx.sampleRate;
-      const nb=this.ctx.createBuffer(1,nlen,this.ctx.sampleRate);
-      const d=nb.getChannelData(0);
-      for(let i=0;i<nlen;i++) d[i]=(Math.random()*2-1)*(0.8+0.2*Math.random());
-      const ns=this.ctx.createBufferSource();
-      ns.buffer=nb; ns.loop=true;
+      const drone2 = this.ctx.createOscillator();
+      drone2.type = "triangle";
+      drone2.frequency.value = 104;
 
-      const hp=this.ctx.createBiquadFilter();
-      hp.type="highpass"; hp.frequency.value=160;
+      const droneGain = this.ctx.createGain();
+      droneGain.gain.value = 0.0;
 
-      this.noiseG=this.ctx.createGain();
-      this.noiseG.gain.value=0.02;
-      ns.connect(hp); hp.connect(this.noiseG); this.noiseG.connect(this.drive);
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 200;
 
-      // siren
-      this.sirenO=this.ctx.createOscillator();
-      this.sirenO.type="sine";
-      this.sirenO.frequency.value=520;
-      this.sirenG=this.ctx.createGain();
-      this.sirenG.gain.value=0.0001;
-      this.sirenO.connect(this.sirenG);
-      this.sirenG.connect(this.filter);
+      const hp = this.ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 40;
 
-      o1.start(); o2.start(); ns.start(); this.sirenO.start();
-      this.started=true;
+      // harsh pulse
+      const pulse = this.ctx.createOscillator();
+      pulse.type = "square";
+      pulse.frequency.value = 2;
+
+      const pulseGain = this.ctx.createGain();
+      pulseGain.gain.value = 0.0;
+
+      // LFO wobble
+      const lfo = this.ctx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = 0.15;
+
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.value = 45;
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(lp.frequency);
+
+      noise.connect(hp).connect(noiseGain).connect(lp).connect(this.master);
+      drone1.connect(droneGain).connect(lp);
+      drone2.connect(droneGain).connect(lp);
+      pulse.connect(pulseGain).connect(this.master);
+
+      noise.start();
+      drone1.start();
+      drone2.start();
+      pulse.start();
+      lfo.start();
+
+      this._nodes = { noiseGain, droneGain, pulseGain, lp };
+
+      this.setMuted(true);
     },
 
-    setHard(on){
-      this.hard=!!on;
-      if(!this.started) return;
-      const t=this.ctx.currentTime;
-      this.master.gain.setTargetAtTime(this.hard?0.28:0.20,t,0.08);
-      this.drive.curve=this._dist(this.hard?320:150);
+    setMuted(m) {
+      this.muted = m;
+      if (!this.master) return;
+      const t = this.ctx.currentTime;
+      this.master.gain.cancelScheduledValues(t);
+      this.master.gain.setTargetAtTime(m ? 0.0 : 0.28, t, 0.04);
     },
 
-    setIntensity(v, mode){
-      if(!this.started) return;
-      const t=this.ctx.currentTime;
-      const i=clamp(v,0,1);
-      this.filter.frequency.setTargetAtTime(280+i*(this.hard?2600:2000),t,0.10);
-      this.noiseG.gain.setTargetAtTime(0.01+i*(this.hard?0.24:0.14),t,0.10);
-      this.droneG.gain.setTargetAtTime(0.06+i*0.14,t,0.10);
+    setHard(v) { this.hard = v; },
 
-      const sirenOn=(mode==="frenetic"||mode==="boss");
-      const target=(this.hard && sirenOn)?(0.02+i*0.07):0.0001;
-      this.sirenG.gain.setTargetAtTime(target,t,0.12);
+    setIntensity(v, mode) {
+      this.intensity = clamp(v, 0, 1);
+      this.mode = mode || this.mode;
+      if (!this._nodes) return;
 
-      if(sirenOn){
-        const f=420+Math.sin(performance.now()*0.0012)*200;
-        this.sirenO.frequency.setTargetAtTime(f,t,0.12);
-      }
+      const t = this.ctx.currentTime;
+      const { noiseGain, droneGain, pulseGain, lp } = this._nodes;
+
+      const base = this.muted ? 0 : 1;
+      const hard = this.hard ? 1 : 0.55;
+
+      // Drone grows with intensity
+      droneGain.gain.setTargetAtTime(base * (0.05 + this.intensity * 0.14) * hard, t, 0.06);
+
+      // Noise presence depends on mode
+      const noiseTarget =
+        this.mode === "atmosphere"
+          ? (0.02 + this.intensity * 0.06)
+          : (0.05 + this.intensity * 0.18);
+
+      noiseGain.gain.setTargetAtTime(base * noiseTarget * hard, t, 0.05);
+
+      // Pulse: subtle in atmosphere, aggressive in frenetic
+      const pulseTarget =
+        this.mode === "atmosphere"
+          ? (0.00 + this.intensity * 0.03)
+          : (0.03 + this.intensity * 0.12);
+
+      pulseGain.gain.setTargetAtTime(base * pulseTarget * hard, t, 0.05);
+
+      // Filter opens more in frenetic
+      const f = this.mode === "atmosphere" ? 160 + this.intensity * 120 : 250 + this.intensity * 900;
+      lp.frequency.setTargetAtTime(f, t, 0.09);
     },
 
-    ping(kind="shoot", amt=1){
-      if(!this.started) return;
-      const t=this.ctx.currentTime;
-      const o=this.ctx.createOscillator();
-      const g=this.ctx.createGain();
-      o.connect(g); g.connect(this.filter);
-      g.gain.value=0.0001;
+    ping(type = "shoot", amp = 0.7) {
+      if (!this.ctx || this.muted) return;
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      const f = this.ctx.createBiquadFilter();
 
-      if(kind==="shoot"){
-        o.type="square";
-        o.frequency.setValueAtTime(200,t);
-        o.frequency.exponentialRampToValueAtTime(70,t+0.09);
-        g.gain.setValueAtTime(0.11*amt,t);
-        g.gain.exponentialRampToValueAtTime(0.0001,t+0.10);
-        o.start(t); o.stop(t+0.11);
-      } else if(kind==="hit"){
-        o.type="sawtooth";
-        o.frequency.setValueAtTime(120,t);
-        o.frequency.exponentialRampToValueAtTime(18,t+0.22);
-        g.gain.setValueAtTime(0.18*amt,t);
-        g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
-        o.start(t); o.stop(t+0.26);
-      } else if(kind==="thump"){
-        o.type="sine";
-        o.frequency.setValueAtTime(110,t);
-        o.frequency.exponentialRampToValueAtTime(36,t+0.16);
-        g.gain.setValueAtTime(0.22*amt,t);
-        g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
-        o.start(t); o.stop(t+0.24);
-      } else if(kind==="laser"){
-        o.type="triangle";
-        o.frequency.setValueAtTime(320,t);
-        o.frequency.linearRampToValueAtTime(90,t+0.14);
-        g.gain.setValueAtTime(0.15*amt,t);
-        g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
-        o.start(t); o.stop(t+0.19);
-      } else if(kind==="glass"){
-        o.type="square";
-        o.frequency.setValueAtTime(880,t);
-        o.frequency.exponentialRampToValueAtTime(220,t+0.08);
-        g.gain.setValueAtTime(0.10*amt,t);
-        g.gain.exponentialRampToValueAtTime(0.0001,t+0.10);
-        o.start(t); o.stop(t+0.11);
-      }
-    },
+      f.type = "bandpass";
+      f.frequency.value = (type === "hit") ? 120 : (type === "laser" ? 900 : 260);
 
-    _dist(amount){
-      const n=44100;
-      const curve=new Float32Array(n);
-      const k=typeof amount==="number"?amount:50;
-      const deg=Math.PI/180;
-      for(let i=0;i<n;i++){
-        const x=(i*2)/n-1;
-        curve[i]=((3+k)*x*20*deg)/(Math.PI+k*Math.abs(x));
-      }
-      return curve;
+      o.type = (type === "hit") ? "sawtooth" : (type === "laser" ? "square" : "triangle");
+      o.frequency.setValueAtTime(type === "hit" ? 85 : (type === "laser" ? 420 : 180), t);
+
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.12 * amp, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (type === "hit" ? 0.18 : 0.10));
+
+      o.connect(f).connect(g).connect(this.master);
+      o.start(t);
+      o.stop(t + 0.2);
     }
   };
-  canvas.addEventListener("pointerdown", ()=>AudioSys.start());
 
-  /*************************
-   * Scene stack (dialogue overlay)
-   *************************/
-  const SceneStack = {
-    stack:[],
-    push(s){ this.stack.push(s); s.onEnter?.(); },
-    pop(){ const s=this.stack.pop(); s?.onExit?.(); return s; },
-    top(){ return this.stack[this.stack.length-1]||null; }
-  };
-
-  function escapeHtml(s){
-    return (s??"").toString().replace(/[&<>"']/g,(m)=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-    }[m]));
-  }
-
-  class DialogueScene {
-    constructor(cfg){ this.cfg=cfg; this.pausesGame=true; }
-    onEnter(){
-      UI.dialogue.classList.remove("hidden");
-      UI.dlgTitle.textContent=this.cfg.title;
-      UI.dlgSub.textContent=this.cfg.sub||"";
-      UI.dlgBody.textContent=this.cfg.body;
-
-      UI.dlgChoices.innerHTML="";
-      this.cfg.choices.forEach((ch,idx)=>{
-        const b=document.createElement("button");
-        b.className="choiceBtn";
-        b.innerHTML=`<b>${idx+1}) ${escapeHtml(ch.label)}</b><small>${escapeHtml(ch.hint||"")}</small>`;
-        b.addEventListener("click", ()=>this.pick(idx));
-        UI.dlgChoices.appendChild(b);
+  /********************************************************************
+   * Assets (optional local PNGs)
+   ********************************************************************/
+  class Assets {
+    constructor() {
+      this.allowImages = true;
+      this.img = new Map();
+      this.ready = false;
+    }
+    loadList(list) {
+      const promises = list.map(path => this.load(path));
+      return Promise.allSettled(promises).then(() => { this.ready = true; });
+    }
+    load(path) {
+      return new Promise((res) => {
+        const im = new Image();
+        im.onload = () => { this.img.set(path, im); res(true); };
+        im.onerror = () => { this.img.set(path, null); res(false); };
+        im.src = path;
       });
     }
-    onExit(){
-      UI.dialogue.classList.add("hidden");
-      UI.dlgChoices.innerHTML="";
-    }
-    pick(idx){
-      const ch=this.cfg.choices[idx]; if(!ch) return;
-      ch.onPick?.();
-      SceneStack.pop();
-    }
-    update(){
-      if(Input.consume("Digit1")) this.pick(0);
-      if(Input.consume("Digit2")) this.pick(1);
-      if(Input.consume("Digit3")) this.pick(2);
-      if(Input.consume("Digit4")) this.pick(3);
+    get(path) {
+      if (!this.allowImages) return null;
+      return this.img.get(path) || null;
     }
   }
 
-  /*************************
-   * Atmosphere Zones
-   *************************/
-  class AtmosphereManager {
-    constructor(){
-      this.zoneIndex=0;
-      this.transitionT=0;
-      this.zones=[
-        {depth:0,   name:"INTAKE",   tint:"#2a2a33", fog:1.05, noise:1.00, ward:0.4, whisper:"Wet paper. Clean lies."},
-        {depth:160, name:"WARD",     tint:"#1c2430", fog:1.18, noise:1.10, ward:1.0, whisper:"The ward is vibrant. It is not alive."},
-        {depth:420, name:"SURGERY",  tint:"#2b1020", fog:1.12, noise:1.25, ward:0.7, whisper:"The lights are too clean. That’s how you know."},
-        {depth:680, name:"BASEMENT", tint:"#0b1d16", fog:1.35, noise:1.35, ward:0.5, whisper:"Drips spell names you refuse to read."},
-        {depth:980, name:"CHAPEL",   tint:"#2a1b0a", fog:1.10, noise:1.45, ward:0.3, whisper:"Witness is demanded."},
-      ];
-      this.zone=this.zones[0];
-    }
-    update(dt,g){
-      const d=Math.floor(g.player.x/10);
-      let idx=this.zoneIndex;
-      while(idx+1<this.zones.length && d>=this.zones[idx+1].depth) idx++;
-      if(idx!==this.zoneIndex){
-        this.zoneIndex=idx;
-        this.zone=this.zones[idx];
-        this.transitionT=2.2;
-        g.whisper(`[ZONE: ${this.zone.name}] ${this.zone.whisper}`,2.6);
-        AudioSys.ping("thump",0.9);
+  const ASSETS = new Assets();
+
+  // If you create these local files, they will be used automatically:
+  const OPTIONAL_ASSET_LIST = [
+    "assets/player.png",
+    "assets/angel.png",
+    "assets/fiend.png",
+    "assets/golem.png",
+    "assets/crazy.png",
+    "assets/wailer.png",
+    "assets/daughter.png",
+    "assets/face1.png",
+    "assets/face2.png",
+    "assets/face3.png",
+  ];
+
+  /********************************************************************
+   * Pixel sprite renderer (procedural, animated)
+   ********************************************************************/
+  function drawPixelSprite(ctx, x, y, frame, kind, pal) {
+    // All sprites are small “pixel art” built from rectangles (not monoblocks).
+    // x,y are top-left in internal buffer space.
+    // frame animates limbs/eyes/glitch offsets.
+
+    const t = frame;
+    const wob = Math.sin(t * 0.35) * 1.2;
+
+    const px = (v) => (x + v) | 0;
+    const py = (v) => (y + v) | 0;
+
+    function eye(cx, cy, angry = false) {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(px(cx), py(cy), 3, 2);
+      ctx.fillStyle = "#ff3344";
+      ctx.fillRect(px(cx + 1), py(cy + 1), 1, 1);
+      if (angry) {
+        ctx.strokeStyle = "#ff3344";
+        ctx.beginPath();
+        ctx.moveTo(px(cx - 1), py(cy - 1));
+        ctx.lineTo(px(cx + 3), py(cy));
+        ctx.stroke();
       }
-      this.transitionT=Math.max(0,this.transitionT-dt);
     }
-    get fogMult(){ return this.zone.fog; }
-    get noiseMult(){ return this.zone.noise; }
-    get tint(){ return this.zone.tint; }
-    get ward(){ return this.zone.ward; }
-    get name(){ return this.zone.name; }
+
+    if (kind === "player") {
+      // coat + mask + gun arm
+      ctx.fillStyle = "#1b1b22";
+      ctx.fillRect(px(4), py(6), 10, 18);
+      ctx.fillStyle = "#2a2a36";
+      ctx.fillRect(px(5), py(7), 8, 16);
+
+      // head
+      ctx.fillStyle = "#d8d8e2";
+      ctx.fillRect(px(6), py(2), 6, 5);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(px(6), py(4), 6, 2);
+
+      // “lens”
+      ctx.fillStyle = "#7de7ff";
+      ctx.fillRect(px(9), py(4), 2, 1);
+
+      // legs
+      ctx.fillStyle = "#0e0e13";
+      const step = (Math.sin(t * 0.6) * 2) | 0;
+      ctx.fillRect(px(5), py(24), 3, 5);
+      ctx.fillRect(px(10 + step), py(24), 3, 5);
+
+      // gun
+      ctx.fillStyle = "#4b4b5a";
+      ctx.fillRect(px(14), py(12), 6, 2);
+      ctx.fillStyle = pal.accent;
+      ctx.fillRect(px(16), py(13), 2, 1);
+      return;
+    }
+
+    if (kind === "daughter") {
+      // ghost dress
+      ctx.fillStyle = "rgba(0,255,170,0.12)";
+      ctx.beginPath();
+      ctx.arc(px(8), py(10), 13, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = pal.child;
+      ctx.beginPath();
+      ctx.moveTo(px(8), py(2));
+      ctx.lineTo(px(14), py(26));
+      ctx.lineTo(px(2), py(26));
+      ctx.fill();
+
+      ctx.fillStyle = "#0b3324";
+      ctx.fillRect(px(5), py(8), 2, 2);
+      ctx.fillRect(px(9), py(8), 2, 2);
+      return;
+    }
+
+    if (kind === "angel") {
+      // hunched torso
+      ctx.fillStyle = "#2a0a12";
+      ctx.fillRect(px(4), py(8), 12, 12);
+      ctx.fillStyle = pal.danger;
+      ctx.fillRect(px(5), py(9), 10, 10);
+
+      // head
+      ctx.fillStyle = "#09090b";
+      ctx.fillRect(px(6), py(4), 8, 5);
+      eye(7, 5, true);
+      eye(11, 5, true);
+
+      // spikes
+      ctx.fillStyle = "#ff7a8b";
+      ctx.fillRect(px(3), py(11), 1, 2);
+      ctx.fillRect(px(16), py(11), 1, 2);
+
+      // legs
+      ctx.fillStyle = "#1a1a22";
+      const s = (Math.sin(t * 0.55) * 2) | 0;
+      ctx.fillRect(px(6), py(20), 3, 6);
+      ctx.fillRect(px(11 + s), py(20), 3, 6);
+      return;
+    }
+
+    if (kind === "fiend") {
+      // spiked fiend: thicker, angrier
+      ctx.fillStyle = "#16060a";
+      ctx.fillRect(px(3), py(7), 14, 14);
+      ctx.fillStyle = "#ff1f3a";
+      ctx.fillRect(px(4), py(8), 12, 12);
+
+      // crown spikes
+      ctx.fillStyle = "#ffd2da";
+      ctx.fillRect(px(4), py(5), 1, 2);
+      ctx.fillRect(px(7), py(4), 1, 3);
+      ctx.fillRect(px(10), py(4), 1, 3);
+      ctx.fillRect(px(13), py(5), 1, 2);
+
+      // eyes
+      ctx.fillStyle = "#0b0b0f";
+      ctx.fillRect(px(6), py(11), 3, 2);
+      ctx.fillRect(px(11), py(11), 3, 2);
+      ctx.fillStyle = "#fff000";
+      ctx.fillRect(px(7), py(12), 1, 1);
+      ctx.fillRect(px(12), py(12), 1, 1);
+
+      // claws
+      ctx.fillStyle = "#b1002a";
+      ctx.fillRect(px(2), py(18), 2, 2);
+      ctx.fillRect(px(16), py(18), 2, 2);
+      return;
+    }
+
+    if (kind === "golem") {
+      // slow tank: stone plates
+      ctx.fillStyle = "#0f0f14";
+      ctx.fillRect(px(4), py(6), 12, 18);
+      ctx.fillStyle = "#2d2d38";
+      ctx.fillRect(px(5), py(7), 10, 16);
+      ctx.fillStyle = "#1a1a22";
+      ctx.fillRect(px(6), py(9), 8, 4);
+
+      // eyes (dim)
+      ctx.fillStyle = "#111";
+      ctx.fillRect(px(7), py(12), 2, 1);
+      ctx.fillRect(px(11), py(12), 2, 1);
+      ctx.fillStyle = pal.sick;
+      ctx.fillRect(px(8), py(12), 1, 1);
+      ctx.fillRect(px(12), py(12), 1, 1);
+
+      // stompy legs
+      const s = (Math.sin(t * 0.25) * 1) | 0;
+      ctx.fillStyle = "#111118";
+      ctx.fillRect(px(6), py(24), 3, 6);
+      ctx.fillRect(px(11 + s), py(24), 3, 6);
+      return;
+    }
+
+    if (kind === "crazy") {
+      // slender fast: thin limbs, twitch
+      const twitch = (Math.sin(t * 1.3) * 2) | 0;
+      ctx.fillStyle = "#121218";
+      ctx.fillRect(px(7), py(5), 6, 16);
+
+      // head
+      ctx.fillStyle = "#e0e0ea";
+      ctx.fillRect(px(8 + twitch), py(2), 4, 4);
+      // eyes
+      ctx.fillStyle = "#111";
+      ctx.fillRect(px(9 + twitch), py(3), 1, 1);
+      ctx.fillRect(px(11 + twitch), py(3), 1, 1);
+      ctx.fillStyle = pal.danger;
+      ctx.fillRect(px(10 + twitch), py(3), 1, 1);
+
+      // arms
+      ctx.fillStyle = "#1a1a22";
+      ctx.fillRect(px(5), py(10), 2, 8);
+      ctx.fillRect(px(13), py(10), 2, 8);
+
+      // legs
+      const s = (Math.sin(t * 0.9) * 2) | 0;
+      ctx.fillRect(px(7), py(21), 2, 7);
+      ctx.fillRect(px(11 + s), py(21), 2, 7);
+      return;
+    }
+
+    if (kind === "wailer") {
+      // floating grief enemy
+      ctx.fillStyle = "rgba(125,60,255,0.18)";
+      ctx.beginPath();
+      ctx.arc(px(10), py(12 + wob), 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#1a0626";
+      ctx.fillRect(px(5), py(6 + wob), 10, 14);
+      ctx.fillStyle = pal.accent;
+      ctx.fillRect(px(6), py(7 + wob), 8, 12);
+
+      // mouth void
+      ctx.fillStyle = "#000";
+      ctx.fillRect(px(8), py(15 + wob), 4, 3);
+
+      // eyes
+      eye(7, 10 + wob, false);
+      eye(11, 10 + wob, false);
+      return;
+    }
   }
 
-  /*************************
-   * Particles + Decals (gore)
-   *************************/
+  /********************************************************************
+   * FX: particles, decals, screen effects (wiggle/memory/faces/glitch)
+   ********************************************************************/
   class Particle {
-    constructor(x,y,kind){
-      this.x=x; this.y=y;
-      this.kind=kind;
-      this.vx=rand(-120,120);
-      this.vy=rand(-220,60);
-      this.life=rand(0.25,1.2);
-      this.s=rand(1,3);
-      if(kind==="gib"){ this.s=rand(2,4); this.life=rand(0.4,1.4); this.vx*=1.2; this.vy*=1.2; }
-      if(kind==="shard"){ this.s=rand(1,2); this.life=rand(0.25,0.9); this.vx*=1.4; this.vy*=1.1; }
+    constructor(x, y, kind, pal) {
+      this.x = x; this.y = y;
+      this.kind = kind;
+      this.vx = rand(-55, 55);
+      this.vy = rand(-85, 35);
+      this.life = rand(0.35, 0.85);
+      this.pal = pal;
+      this.sz = (kind === "gib") ? randi(2, 4) : randi(1, 3);
     }
-    update(dt,g){
-      this.life-=dt;
-      this.vy += g.world.gravity*dt*0.55;
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-
-      if(this.y>g.world.groundY){
-        this.y=g.world.groundY;
-        this.vx*=0.25;
-        this.vy*=-0.15;
-        // occasional blood decal splat
-        if(this.kind==="blood"||this.kind==="gib"){
-          if(chance(0.06)) g.addDecal(this.x, g.world.groundY-1, "blood");
-        }
-      }
+    update(dt) {
+      this.life -= dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.vy += 220 * dt;
     }
-    draw(ctx,cam){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      if(this.kind==="blood") ctx.fillStyle=PAL.rust;
-      else if(this.kind==="gib") ctx.fillStyle=chance(0.7)?PAL.rust:"#22060a";
-      else if(this.kind==="shard") ctx.fillStyle=PAL.glass;
-      else if(this.kind==="spark") ctx.fillStyle=PAL.paper;
-      else ctx.fillStyle="#3a3a44";
-      ctx.fillRect(sx,sy,this.s,this.s);
+    draw(ctx, camx) {
+      if (this.life <= 0) return;
+      ctx.globalAlpha = clamp(this.life * 1.5, 0, 1);
+      if (this.kind === "blood") ctx.fillStyle = this.pal.blood;
+      else if (this.kind === "gib") ctx.fillStyle = this.pal.goreDark;
+      else if (this.kind === "spark") ctx.fillStyle = "#ffffff";
+      else ctx.fillStyle = "#aaaaaa";
+      ctx.fillRect((this.x - camx) | 0, (this.y) | 0, this.sz, this.sz);
+      ctx.globalAlpha = 1;
     }
   }
 
   class Decal {
-    constructor(x,y,type){
-      this.x=x; this.y=y;
-      this.type=type;
-      this.a=rand(0.22,0.55);
-      this.r=rand(4,12);
+    constructor(x, y, type, pal) {
+      this.x = x; this.y = y;
+      this.type = type;
+      this.pal = pal;
+      this.t = 0;
+      this.r = randi(6, 14);
     }
-    draw(ctx,cam){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.globalAlpha=this.a;
-      if(this.type==="blood"){
-        ctx.fillStyle=PAL.rust;
-        ctx.fillRect(sx,sy,this.r,(this.r*0.5)|0);
-        ctx.fillRect(sx+(this.r*0.3)|0, sy-1, 2, 2);
-      } else {
-        ctx.fillStyle="#222230";
-        ctx.fillRect(sx,sy,this.r,1);
-      }
-      ctx.globalAlpha=1;
+    update(dt) { this.t += dt; }
+    draw(ctx, camx) {
+      const x = (this.x - camx) | 0;
+      const y = (this.y) | 0;
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = this.type === "blood" ? this.pal.blood : "#111";
+      ctx.beginPath();
+      ctx.ellipse(x, y, this.r, (this.r * 0.55) | 0, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
   }
 
-  /*************************
-   * World + Props
-   *************************/
+  class VisualFX {
+    constructor() {
+      this.allowFaces = true;
+      this.wiggleT = 0;
+      this.memoryT = 0;
+      this.paletteShiftT = 0;
+      this.glitchT = 0;
+      this.faceFlashT = 0;
+      this.faceImg = null;
+      this.faceJitter = 0;
+    }
+
+    triggerWiggle(t = 4) { this.wiggleT = Math.max(this.wiggleT, t); }
+    triggerMemory(t = 4) { this.memoryT = Math.max(this.memoryT, t); }
+    triggerGlitch(t = 1.2) { this.glitchT = Math.max(this.glitchT, t); }
+    triggerPaletteShift(t = 3) { this.paletteShiftT = Math.max(this.paletteShiftT, t); }
+    triggerFace(im, t = 0.8) {
+      if (!this.allowFaces) return;
+      this.faceImg = im || this.faceImg;
+      this.faceFlashT = Math.max(this.faceFlashT, t);
+      this.faceJitter = rand(2, 7);
+    }
+
+    update(dt) {
+      this.wiggleT = Math.max(0, this.wiggleT - dt);
+      this.memoryT = Math.max(0, this.memoryT - dt);
+      this.paletteShiftT = Math.max(0, this.paletteShiftT - dt);
+      this.glitchT = Math.max(0, this.glitchT - dt);
+      this.faceFlashT = Math.max(0, this.faceFlashT - dt);
+    }
+
+    postProcess(ctx, game) {
+      // Add noise / mild vignette / glitch slices
+      const pal = game.pal;
+      const t = game.time;
+
+      // Wiggle: horizontal sine displacement via scan stripes
+      if (this.wiggleT > 0) {
+        const amp = 3 + (this.wiggleT * 0.6);
+        ctx.globalAlpha = 0.9;
+        for (let y = 0; y < RH; y += 3) {
+          const off = Math.sin(t * 8 + y * 0.12) * amp;
+          // copy a strip to itself with offset
+          ctx.drawImage(buf, 0, y, RW, 3, off, y, RW, 3);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Glitch slices
+      if (this.glitchT > 0) {
+        const n = 8;
+        for (let i = 0; i < n; i++) {
+          const y = randi(0, RH - 8);
+          const h = randi(2, 10);
+          const sx = randi(0, 20);
+          const dx = randi(-18, 18);
+          ctx.drawImage(buf, sx, y, RW - sx, h, dx, y, RW - sx, h);
+        }
+      }
+
+      // Memory overlay: show ghostly “past” faces if assets exist
+      if (this.memoryT > 0) {
+        ctx.globalAlpha = clamp(this.memoryT / 4, 0, 1) * 0.35;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, RW, RH);
+
+        const face1 = ASSETS.get("assets/face1.png");
+        const face2 = ASSETS.get("assets/face2.png");
+        const face3 = ASSETS.get("assets/face3.png");
+        const faces = [face1, face2, face3].filter(Boolean);
+
+        if (faces.length) {
+          const im = faces[(Math.floor(game.time * 2) % faces.length)];
+          const w = 210, h = 210;
+          const ox = (RW / 2 - w / 2 + Math.sin(game.time * 2) * 9) | 0;
+          const oy = (RH / 2 - h / 2 + Math.cos(game.time * 1.7) * 7) | 0;
+          // crude distortion: draw repeated with offsets
+          for (let i = 0; i < 5; i++) {
+            const dx = ox + rand(-8, 8);
+            const dy = oy + rand(-8, 8);
+            ctx.globalAlpha = 0.08;
+            ctx.drawImage(im, dx, dy, w, h);
+          }
+          ctx.globalAlpha = clamp(this.memoryT / 4, 0, 1) * 0.24;
+          ctx.drawImage(im, ox, oy, w, h);
+        } else {
+          // fallback: procedural “face” blocks
+          ctx.globalAlpha = 0.22;
+          ctx.fillStyle = pal.accent;
+          ctx.fillRect(140, 60, 200, 160);
+          ctx.fillStyle = "#000";
+          ctx.fillRect(200, 110, 22, 10);
+          ctx.fillRect(260, 110, 22, 10);
+          ctx.fillRect(235, 140, 14, 18);
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // Palette shift tint
+      if (this.paletteShiftT > 0) {
+        ctx.globalAlpha = 0.12 + (this.paletteShiftT / 10);
+        ctx.fillStyle = pal.accent;
+        ctx.fillRect(0, 0, RW, RH);
+        ctx.globalAlpha = 1;
+      }
+
+      // Film grain / pixel noise
+      ctx.globalAlpha = 0.12;
+      for (let i = 0; i < 140; i++) {
+        const x = randi(0, RW - 1);
+        const y = randi(0, RH - 1);
+        ctx.fillStyle = (Math.random() < 0.5) ? "#0b0b0b" : "#151515";
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.globalAlpha = 1;
+
+      // Face flash (jump scare)
+      if (this.faceFlashT > 0) {
+        ctx.globalAlpha = clamp(this.faceFlashT, 0, 1) * 0.55;
+        const im = this.faceImg || ASSETS.get("assets/face2.png");
+        if (im) {
+          const s = 240 + Math.sin(game.time * 10) * 12;
+          const ox = (RW / 2 - s / 2 + rand(-this.faceJitter, this.faceJitter)) | 0;
+          const oy = (RH / 2 - s / 2 + rand(-this.faceJitter, this.faceJitter)) | 0;
+          ctx.drawImage(im, ox, oy, s, s);
+        } else {
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, RW, RH);
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  /********************************************************************
+   * World: ground, obstacles, props (bins, glass, chests, potions)
+   ********************************************************************/
+  class Prop {
+    constructor(x, y, kind) {
+      this.x = x; this.y = y;
+      this.kind = kind; // "bin"|"glass"|"chest"|"potion"
+      this.w = (kind === "bin") ? 16 : (kind === "glass" ? 14 : (kind === "chest" ? 18 : 14));
+      this.h = (kind === "bin") ? 14 : (kind === "glass" ? 18 : (kind === "chest" ? 14 : 14));
+      this.broken = false;
+      this._wiggle = rand(0, 10);
+    }
+    aabb() { return { x: this.x, y: this.y, w: this.w, h: this.h }; }
+
+    hit(game, cause = "bullet") {
+      // returns optional drop
+      if (this.broken) return null;
+      this.broken = true;
+      const pal = game.pal;
+
+      if (this.kind === "glass") {
+        // glass shards
+        for (let i = 0; i < 18; i++) game.spawnParticle(this.x + this.w / 2, this.y + this.h / 2, "spark");
+        game.fx.triggerGlitch(0.25);
+        AudioSys.ping("hit", 0.7);
+        return chance(0.25) ? "SAN" : null;
+      }
+
+      if (this.kind === "bin") {
+        for (let i = 0; i < 8; i++) game.spawnParticle(this.x + this.w / 2, this.y + 4, "spark");
+        AudioSys.ping("hit", 0.55);
+        return chance(0.35) ? (chance(0.5) ? "HP" : "SAN") : null;
+      }
+
+      if (this.kind === "potion") {
+        // randomized substance (power up/down)
+        AudioSys.ping("hit", 0.75);
+        if (chance(0.25)) return "CONFUSION";
+        if (chance(0.40)) return "WIGGLE";
+        return "MEMORY";
+      }
+
+      if (this.kind === "chest") {
+        AudioSys.ping("hit", 0.9);
+        // chest drops more interesting items
+        const roll = Math.random();
+        if (roll < 0.30) return "FRIEND";
+        if (roll < 0.52) return "LASER";
+        if (roll < 0.72) return "HP";
+        if (roll < 0.90) return "SAN";
+        return "GLITCH";
+      }
+
+      return null;
+    }
+
+    draw(ctx, camx, pal, t) {
+      const x = (this.x - camx) | 0;
+      const y = (this.y) | 0;
+      if (x < -30 || x > RW + 30) return;
+
+      if (this.broken) {
+        ctx.globalAlpha = 0.35;
+      }
+
+      if (this.kind === "bin") {
+        ctx.fillStyle = "#101018";
+        ctx.fillRect(x, y, this.w, this.h);
+        ctx.fillStyle = "#1f1f2a";
+        ctx.fillRect(x + 2, y + 2, this.w - 4, this.h - 4);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x + 3, y + 5, this.w - 6, 2);
+      } else if (this.kind === "glass") {
+        ctx.fillStyle = "rgba(125,231,255,0.14)";
+        ctx.fillRect(x, y, this.w, this.h);
+        ctx.strokeStyle = pal.glass;
+        ctx.strokeRect(x + 1, y + 1, this.w - 2, this.h - 2);
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.fillRect(x + 3, y + 3, 2, this.h - 6);
+      } else if (this.kind === "potion") {
+        const bob = Math.sin(t * 2 + this._wiggle) * 1.5;
+        ctx.fillStyle = "#0b0b10";
+        ctx.fillRect(x, y + bob, this.w, this.h);
+        ctx.fillStyle = pal.accent;
+        ctx.fillRect(x + 3, y + 5 + bob, this.w - 6, this.h - 8);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x + 6, y + 2 + bob, this.w - 12, 3);
+      } else if (this.kind === "chest") {
+        ctx.fillStyle = "#0b0b10";
+        ctx.fillRect(x, y + 4, this.w, this.h - 4);
+        ctx.fillStyle = "#1f102a";
+        ctx.fillRect(x + 2, y + 6, this.w - 4, this.h - 8);
+        ctx.fillStyle = pal.accent;
+        ctx.fillRect(x + 7, y + 10, 4, 2);
+        ctx.strokeStyle = "#2b2b35";
+        ctx.strokeRect(x + 1, y + 5, this.w - 2, this.h - 6);
+      }
+
+      ctx.globalAlpha = 1;
+    }
+  }
+
   class World {
-    constructor(){
-      this.gravity=720;
-      this.groundY=170;
-      this.cam={x:0,y:0};
-      this.obstacles=[];
-      this.decor=[];
-      this.props=[];
-      this.thresholdX=1100;
+    constructor() {
       this.reset();
     }
-    reset(){
-      this.cam.x=0; this.cam.y=0;
-      this.obstacles.length=0;
-      this.decor.length=0;
-      this.props.length=0;
 
-      let x=260;
-      for(let i=0;i<260;i++){
-        // obstacles
-        if(chance(0.34)){
-          const h=randi(16,60);
-          const w=randi(20,90);
-          this.obstacles.push({x,y:this.groundY-h,w,h,type:chance(0.5)?"cart":"pillar"});
-        }
-        // ward decor: bins/glass/potions
-        if(chance(0.18)) this.props.push(new Prop(x+rand(-70,70), "bin"));
-        if(chance(0.14)) this.props.push(new Prop(x+rand(-70,70), "glass"));
-        if(chance(0.12)) this.props.push(new Prop(x+rand(-70,70), "potion"));
+    reset() {
+      this.camx = 0;
+      this.groundY = 220;
+      this.obstacles = [];
+      this.props = [];
+      this._gen();
+    }
 
-        // decor
-        if(chance(0.22)){
-          this.decor.push({x:x+rand(-90,90), type:chance(0.6)?"bars":"lamp", s:rand(0.7,1.4)});
+    _gen() {
+      // Generate a long corridor with props and occasional low obstacles
+      let x = 0;
+      for (let i = 0; i < 220; i++) {
+        x += randi(42, 90);
+
+        // low obstacles (boxes/beds)
+        if (chance(0.25)) {
+          const w = randi(14, 34);
+          const h = randi(10, 28);
+          this.obstacles.push({ x, y: this.groundY - h, w, h });
         }
-        x += rand(70,170);
+
+        // props: bins, glass, potions, chests
+        if (chance(0.28)) {
+          const roll = Math.random();
+          let kind = "bin";
+          if (roll < 0.35) kind = "glass";
+          else if (roll < 0.58) kind = "bin";
+          else if (roll < 0.80) kind = "potion";
+          else kind = "chest";
+          const px = x + randi(-10, 20);
+          const py = this.groundY - (kind === "glass" ? 18 : 14);
+          this.props.push(new Prop(px, py, kind));
+        }
+      }
+      // “exit” zone marker at far right
+      this.exitX = x + 220;
+    }
+
+    drawBackground(ctx, pal, t) {
+      ctx.fillStyle = pal.bg;
+      ctx.fillRect(0, 0, RW, RH);
+
+      // distant “ward” shapes
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = "#0a0a10";
+      for (let i = 0; i < 14; i++) {
+        const bx = (((i * 80) - (this.camx * 0.35)) % (RW + 120)) - 60;
+        const by = 40 + (i % 3) * 10;
+        ctx.fillRect(bx | 0, by | 0, 60, 90);
+      }
+      ctx.globalAlpha = 1;
+
+      // ground
+      ctx.fillStyle = pal.ground;
+      ctx.fillRect(0, this.groundY, RW, RH - this.groundY);
+
+      // grime lines
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = "#101018";
+      for (let y = this.groundY; y < RH; y += 6) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(RW, y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    drawSolids(ctx, pal) {
+      // obstacles
+      ctx.fillStyle = pal.solid;
+      for (const o of this.obstacles) {
+        const x = (o.x - this.camx) | 0;
+        if (x < -80 || x > RW + 80) continue;
+        ctx.fillRect(x, o.y | 0, o.w | 0, o.h | 0);
+        // detail edge
+        ctx.fillStyle = "#0b0b10";
+        ctx.fillRect(x + 1, o.y + 1, Math.max(0, o.w - 2), 2);
+        ctx.fillStyle = pal.solid;
       }
     }
 
-    collide(body){
-      body.grounded=false;
-      if(body.y+body.h>=this.groundY){
-        body.y=this.groundY-body.h;
-        body.vy=0;
-        body.grounded=true;
-      }
-      for(const o of this.obstacles){
-        if(!aabb(body.x,body.y,body.w,body.h,o.x,o.y,o.w,o.h)) continue;
-        const prevY=body.y-body.vy*(1/60);
-        if(prevY+body.h<=o.y+2){
-          body.y=o.y-body.h;
-          body.vy=0;
-          body.grounded=true;
-        } else {
-          if(body.x+body.w/2<o.x+o.w/2) body.x=o.x-body.w;
-          else body.x=o.x+o.w;
-          body.vx=0;
-        }
-      }
-    }
-
-    draw(ctx,t,atmo,decals){
-      ctx.fillStyle=PAL.bg;
-      ctx.fillRect(0,0,RW,RH);
-
-      // parallax decor
-      for(const d of this.decor){
-        const sx=(d.x-this.cam.x*0.5)|0;
-        if(sx<-120||sx>RW+120) continue;
-        this.drawDecor(ctx,d,sx,t,atmo);
-      }
-
-      // ward background vibe
-      ctx.globalAlpha=0.70;
-      ctx.fillStyle=PAL.wall;
-      ctx.fillRect(0,0,RW,this.groundY-80);
-      ctx.globalAlpha=1;
-
-      // “vibrant ward” pulses
-      if(atmo && atmo.name==="WARD"){
-        const pulse=0.05+0.05*Math.sin(t*5);
-        ctx.globalAlpha=0.08+pulse;
-        ctx.fillStyle="#2a3a55";
-        ctx.fillRect(0,10,RW,20);
-        ctx.globalAlpha=1;
-      }
-
-      // floor
-      ctx.fillStyle=PAL.floor;
-      ctx.fillRect(0,this.groundY,RW,RH-this.groundY);
-
-      // blood decals first (on floor)
-      if(decals){
-        for(const d of decals) d.draw(ctx,this.cam);
+    collideEntity(e) {
+      // ground
+      e.grounded = false;
+      if (e.y + e.h >= this.groundY) {
+        e.y = this.groundY - e.h;
+        e.vy = 0;
+        e.grounded = true;
       }
 
       // obstacles
-      for(const o of this.obstacles){
-        const sx=(o.x-this.cam.x)|0;
-        if(sx+o.w<-60||sx>RW+60) continue;
-        ctx.fillStyle="#12121a";
-        ctx.fillRect(sx,o.y,o.w,o.h);
-        ctx.strokeStyle="#0b0b10";
-        ctx.strokeRect(sx+0.5,o.y+0.5,o.w-1,o.h-1);
-        if(o.type==="cart"){
-          ctx.fillStyle="#0a0a10"; ctx.fillRect(sx+4,o.y+4,o.w-8,3);
+      for (const o of this.obstacles) {
+        if (!aabb(e.x, e.y, e.w, e.h, o.x, o.y, o.w, o.h)) continue;
+
+        // resolve minimal axis (simple)
+        const overlapX1 = (e.x + e.w) - o.x;
+        const overlapX2 = (o.x + o.w) - e.x;
+        const overlapY1 = (e.y + e.h) - o.y;
+        const overlapY2 = (o.y + o.h) - e.y;
+
+        const minX = Math.min(overlapX1, overlapX2);
+        const minY = Math.min(overlapY1, overlapY2);
+
+        if (minY < minX) {
+          // vertical
+          if (overlapY1 < overlapY2) {
+            e.y = o.y - e.h;
+            e.vy = 0;
+            e.grounded = true;
+          } else {
+            e.y = o.y + o.h;
+            e.vy = 0;
+          }
         } else {
-          ctx.fillStyle="#0a0a10";
-          for(let i=0;i<3;i++) ctx.fillRect(sx+3+i*5,o.y+3,2,o.h-6);
+          // horizontal
+          if (overlapX1 < overlapX2) e.x = o.x - e.w;
+          else e.x = o.x + o.w;
+          e.vx = 0;
         }
-      }
-
-      // threshold glyph
-      const tx=(this.thresholdX-this.cam.x)|0;
-      if(tx>-40&&tx<RW+40){
-        ctx.globalAlpha=0.8;
-        ctx.strokeStyle=PAL.accent;
-        for(let i=0;i<7;i++){
-          const y0=this.groundY-92+i*14;
-          ctx.beginPath();
-          ctx.moveTo(tx,y0);
-          ctx.lineTo(tx+(i%2?12:-12),y0+10);
-          ctx.stroke();
-        }
-        ctx.globalAlpha=1;
-      }
-
-      // zone tint wash
-      if(atmo){
-        ctx.globalAlpha=0.08+(atmo.transitionT>0?0.06:0);
-        ctx.fillStyle=atmo.tint;
-        ctx.fillRect(0,0,RW,RH);
-        ctx.globalAlpha=1;
-      }
-
-      // fog bands
-      ctx.globalAlpha=0.24;
-      ctx.fillStyle=PAL.fog;
-      for(let i=0;i<8;i++){
-        const yy=10+i*18+Math.sin(t*0.85+i+this.cam.x*0.004)*2;
-        ctx.fillRect(0,yy,RW,10);
-      }
-      ctx.globalAlpha=1;
-    }
-
-    drawDecor(ctx,d,sx,t,atmo){
-      const y=this.groundY;
-      if(d.type==="bars"){
-        ctx.globalAlpha=0.55;
-        ctx.strokeStyle="#0b0b10";
-        for(let i=0;i<7;i++){
-          const x=sx+i*7;
-          ctx.beginPath();
-          ctx.moveTo(x,y-120*d.s);
-          ctx.lineTo(x,y-10);
-          ctx.stroke();
-        }
-        ctx.globalAlpha=1;
-      } else {
-        const flick=0.5+0.5*Math.sin(t*6+sx*0.02);
-        ctx.globalAlpha=0.4;
-        ctx.fillStyle="#0b0b10";
-        ctx.fillRect(sx,y-130*d.s,8,120*d.s);
-        ctx.globalAlpha=0.10+flick*0.22;
-        ctx.fillStyle=PAL.paper;
-        ctx.fillRect(sx-16,y-130*d.s,40,40);
-        ctx.globalAlpha=1;
       }
     }
   }
 
-  class Prop {
-    constructor(x,type){
-      this.x=x;
-      this.type=type; // bin | glass | potion
-      this.y=0;
-      this.w=type==="bin"?16:(type==="glass"?10:10);
-      this.h=type==="bin"?16:(type==="glass"?20:10);
-      this.broken=false;
-      this.bob=rand(0,6.28);
-    }
-    update(dt,g){
-      this.bob += dt*1.8;
-      if(this.type==="glass"){
-        this.y = g.world.groundY - 26;
-      } else if(this.type==="bin"){
-        this.y = g.world.groundY - 18;
-      } else {
-        this.y = g.world.groundY - 16 + Math.sin(this.bob)*1.2;
-      }
-    }
-    aabb(){ return {x:this.x, y:this.y, w:this.w, h:this.h}; }
-    hit(g, kind="bullet"){
-      if(this.broken) return null;
-      this.broken=true;
-
-      if(this.type==="glass"){
-        for(let i=0;i<20;i++) g.fx(this.x+rand(0,this.w), this.y+rand(0,this.h),"shard",1);
-        AudioSys.ping("glass",0.9);
-        return null;
-      }
-      if(this.type==="bin"){
-        for(let i=0;i<16;i++) g.fx(this.x+rand(0,this.w), this.y+rand(0,this.h),"spark",1);
-        AudioSys.ping("thump",0.7);
-        return null;
-      }
-      if(this.type==="potion"){
-        // drop a substance pickup
-        AudioSys.ping("thump",0.7);
-        return chance(0.5) ? "WIGGLE" : "MEMORY";
-      }
-      return null;
-    }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      if(this.type==="bin"){
-        const img=assets.get("bin");
-        const sp=new Sprite(img,24,24,2,1);
-        sp.draw(ctx,sx-4,sy-4, this.bob, false,1,1, this.broken?1:0);
-      } else if(this.type==="glass"){
-        const img=assets.get("glass");
-        const sp=new Sprite(img,16,24,2,1);
-        sp.draw(ctx,sx-3,sy-2, this.bob, false,1,1, this.broken?1:0);
-      } else {
-        const img=assets.get("potion");
-        const sp=new Sprite(img,16,16,2,1);
-        sp.draw(ctx,sx-3,sy-3, this.bob, false,1,1, this.broken?1:0);
-      }
-    }
-  }
-
-  /*************************
-   * Entities
-   *************************/
+  /********************************************************************
+   * Entities: player, enemies, bullets, pickups, daughter, friend
+   ********************************************************************/
   class Entity {
-    constructor(x,y,w,h){
-      this.x=x; this.y=y; this.w=w; this.h=h;
-      this.vx=0; this.vy=0;
-      this.dead=false;
-      this.grounded=false;
+    constructor(x, y, w, h) {
+      this.x = x; this.y = y; this.w = w; this.h = h;
+      this.vx = 0; this.vy = 0;
+      this.grounded = false;
+      this.dead = false;
+      this.hp = 1;
+      this.invT = 0;
+      this.anim = 0;
     }
-    get cx(){ return this.x+this.w/2; }
-    get cy(){ return this.y+this.h/2; }
+    get cx() { return this.x + this.w / 2; }
+    get cy() { return this.y + this.h / 2; }
   }
 
-  class Bullet extends Entity {
-    constructor(x,y,vx,vy,dmg,pierce,from){
-      super(x,y,4,4);
-      this.vx=vx; this.vy=vy;
-      this.dmg=dmg;
-      this.pierce=pierce|0;
-      this.from=from;
-      this.life=1.2;
-      this.hit=new Set();
+  class Bullet {
+    constructor(x, y, vx, vy, dmg, owner) {
+      this.x = x; this.y = y;
+      this.vx = vx; this.vy = vy;
+      this.dmg = dmg;
+      this.owner = owner; // "player"|"enemy"|"friend"
+      this.w = 3; this.h = 2;
+      this.dead = false;
+      this.life = 1.3;
+      this.hit = new Set();
     }
-    update(dt,g){
-      this.life-=dt;
-      if(this.life<=0){ this.dead=true; return; }
-      this.x+=this.vx*dt;
-      this.y+=this.vy*dt;
+    update(dt, game) {
+      this.life -= dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (this.life <= 0) this.dead = true;
 
-      if(this.y>RH||this.y<-40){ this.dead=true; return; }
-      if(this.y+this.h>g.world.groundY){ this.dead=true; g.fx(this.x,this.y,"spark",6); return; }
+      // collide with world bounds
+      if (this.y < -20 || this.y > RH + 30) this.dead = true;
 
-      for(const o of g.world.obstacles){
-        if(aabb(this.x,this.y,this.w,this.h,o.x,o.y,o.w,o.h)){
-          this.dead=true; g.fx(this.x,this.y,"spark",6); return;
+      // collide with obstacles
+      for (const o of game.world.obstacles) {
+        if (aabb(this.x, this.y, this.w, this.h, o.x, o.y, o.w, o.h)) {
+          this.dead = true;
+          game.spawnParticle(this.x, this.y, "spark");
+          return;
         }
       }
     }
-    draw(ctx,cam){
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.fillStyle="#ffe66a"; ctx.fillRect(sx,sy,2,2);
-      ctx.fillStyle="#fff"; ctx.fillRect(sx+1,sy+1,1,1);
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      if (x < -10 || x > RW + 10) return;
+      ctx.fillStyle = (this.owner === "enemy") ? pal.accent : "#ffe36a";
+      ctx.fillRect(x, this.y | 0, this.w, this.h);
+    }
+  }
+
+  class Pickup {
+    constructor(x, y, kind) {
+      this.x = x; this.y = y;
+      this.kind = kind; // HP|SAN|WIGGLE|MEMORY|CONFUSION|FRIEND|LASER|GLITCH
+      this.dead = false;
+      this.t = rand(0, 99);
+      this.w = 10; this.h = 10;
+    }
+    update(dt, game) {
+      this.t += dt;
+      // pickup
+      const p = game.player;
+      const py = this.y + Math.sin(this.t * 2) * 2;
+      if (dist(p.cx, p.cy, this.x, py) < 16) {
+        this.dead = true;
+        game.onPickup(this.kind);
+      }
+    }
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      const y = (this.y + Math.sin(this.t * 2) * 2) | 0;
+      if (x < -20 || x > RW + 20) return;
+
+      let c = pal.accent;
+      if (this.kind === "HP") c = pal.danger;
+      if (this.kind === "SAN") c = pal.accent;
+      if (this.kind === "WIGGLE") c = "#7de7ff";
+      if (this.kind === "MEMORY") c = "#ffffff";
+      if (this.kind === "CONFUSION") c = "#ff3cff";
+      if (this.kind === "FRIEND") c = "#00ffaa";
+      if (this.kind === "LASER") c = "#ffe36a";
+      if (this.kind === "GLITCH") c = "#ff2a2a";
+
+      ctx.fillStyle = "#000";
+      ctx.fillRect(x - 1, y - 1, this.w + 2, this.h + 2);
+      ctx.fillStyle = c;
+      ctx.fillRect(x, y, this.w, this.h);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(x + 2, y + 2, this.w - 4, 2);
     }
   }
 
   class Player extends Entity {
-    constructor(name,avi){
-      super(200,0,16,32);
-      this.name=name;
-      this.avi=avi|0;
+    constructor(name, avi) {
+      super(40, 0, 18, 28);
+      this.name = name;
+      this.avi = avi;
 
-      this.hpMax=110; this.hp=110;
-      this.sanMax=110; this.san=110;
-      if(this.avi===1){ this.sanMax=150; this.san=150; }
-      if(this.avi===2){ this.hpMax=180; this.hp=180; }
+      this.hpMax = (avi === 2) ? 160 : 110;
+      this.hp = this.hpMax;
 
-      this.facing=1;
-      this.cool=0;
-      this.hurtT=0;
+      this.sanMax = (avi === 1) ? 140 : 100;
+      this.san = this.sanMax;
 
-      // survivability
-      this.invulnT=0;
-      this.kbVx=0;
+      this.speed = (avi === 2) ? 70 : 92;
+      this.jump = (avi === 2) ? 210 : 235;
 
-      // status
-      this.status = {
-        jamT:0,
-        shiverT:0,
-        slowT:0,
-        griefT:0,
-        wiggleT:0,
-        memoryT:0,
-      };
-
-      this.lantern=190;
-      this.animT=0;
+      this.facing = 1;
+      this.shootCD = 0;
 
       // weapons
-      this.weaponIndex=0;
-      this.weapons=this._buildWeapons();
-      this.weapon=this.weapons[this.weaponIndex];
-
-      // friend companion unlocked
-      this.hasFriend=false;
-      this.friendBoostT=0;
-    }
-
-    _buildWeapons(){
-      // 4 slots to match 1-4
-      if(this.avi===0){
-        return [
-          {name:"RIFLE", type:"gun", rate:0.12, bullets:1, spread:0.02, pierce:0, dmg:12, sanityCost:0.35},
-          {name:"PISTOL", type:"gun", rate:0.09, bullets:1, spread:0.03, pierce:0, dmg:8, sanityCost:0.15},
-          {name:"FLESH LASER", type:"laser", rate:0.00, dmg:26, sanityCostPerSec:8.5},
-          {name:"BOND (FRIEND)", type:"bond", rate:0.35}
-        ];
-      }
-      if(this.avi===1){
-        return [
-          {name:"NEEDLE", type:"gun", rate:0.15, bullets:1, spread:0.01, pierce:2, dmg:9, sanityCost:0.25},
-          {name:"SIGIL SHARD", type:"gun", rate:0.20, bullets:2, spread:0.12, pierce:0, dmg:7, sanityCost:0.65},
-          {name:"FLESH LASER", type:"laser", rate:0.00, dmg:24, sanityCostPerSec:9.5},
-          {name:"BOND (FRIEND)", type:"bond", rate:0.35}
-        ];
-      }
-      // heavy
-      return [
-        {name:"SCATTER", type:"gun", rate:0.26, bullets:5, spread:0.20, pierce:0, dmg:7, sanityCost:0.40},
-        {name:"HAMMER", type:"melee", rate:0.40, dmg:30},
-        {name:"PISTOL", type:"gun", rate:0.10, bullets:1, spread:0.04, pierce:0, dmg:8, sanityCost:0.15},
-        {name:"BOND (FRIEND)", type:"bond", rate:0.35}
+      this.weapons = [
+        { id: "PISTOL", name: "Pistol", type: "gun", dmg: 9, rate: 0.18, spread: 0.03, bullets: 1, sanityCost: 0.25 },
+        { id: "LASER", name: "Flesh-Cutting Laser", type: "laser", dmg: 26, rate: 0.0, spread: 0.0, bullets: 0, sanityCostPerSec: 10.5 },
       ];
+      this.hasLaser = false;
+      this.weaponIndex = 0;
+
+      // status effects (timed, stable)
+      this.status = {
+        slowT: 0,
+        griefT: 0,
+        wiggleT: 0,
+        memoryT: 0,
+      };
+
+      this.hasFriend = false;
+      this.friendBoostT = 0;
+
+      this.lantern = 160;
     }
 
-    switchWeapon(idx){
-      this.weaponIndex=clamp(idx,0,this.weapons.length-1);
-      this.weapon=this.weapons[this.weaponIndex];
+    currentWeapon() {
+      // If no laser unlocked, clamp selection
+      if (!this.hasLaser && this.weapons[this.weaponIndex].id === "LASER") {
+        this.weaponIndex = 0;
+      }
+      return this.weapons[this.weaponIndex];
     }
 
-    hurt(dmg,fromX=null){
-      if(this.invulnT>0) return;
-      this.invulnT=0.55;
-      this.hp=clamp(this.hp-dmg,0,this.hpMax);
-      this.san=clamp(this.san-dmg*0.20,0,this.sanMax);
-      this.hurtT=0.22;
-
-      if(fromX!==null){
-        const dir=(this.cx<fromX)?-1:1;
-        this.kbVx=dir*240;
-        this.vy=Math.min(this.vy,-120);
+    swapWeapon() {
+      this.weaponIndex = (this.weaponIndex + 1) % this.weapons.length;
+      if (!this.hasLaser && this.weapons[this.weaponIndex].id === "LASER") {
+        this.weaponIndex = 0;
       }
     }
 
-    heal(a){ this.hp=clamp(this.hp+a,0,this.hpMax); }
-    soothe(a){ this.san=clamp(this.san+a,0,this.sanMax); }
-
-    applySubstance(kind,g){
-      if(kind==="WIGGLE"){
-        this.status.wiggleT = Math.max(this.status.wiggleT, rand(6.0, 10.0));
-        g.whisper("WIGGLE SERUM: THE SCREEN LEARNS TO SWIM.", 2.2);
-        AudioSys.ping("thump",0.9);
-      } else if(kind==="MEMORY"){
-        this.status.memoryT = Math.max(this.status.memoryT, rand(7.0, 12.0));
-        g.whisper("MEMORY TINCTURE: YOUR PAST BECOMES A ROOM.", 2.2);
-        AudioSys.ping("thump",0.9);
-      } else if(kind==="FRIEND"){
-        this.hasFriend=true;
-        g.whisper("A FRIEND SIGNS YOUR HAND. IT SHOOTS FOR YOU.", 2.2);
-        AudioSys.ping("thump",0.9);
-      }
+    hurt(dmg, fromX) {
+      if (this.invT > 0) return;
+      this.hp -= dmg;
+      this.invT = 0.5;
+      this.vx += (this.x < fromX ? -1 : 1) * 70;
+      this.san = Math.max(0, this.san - dmg * 0.25);
     }
 
-    update(dt,g){
-      this.animT+=dt;
-      this.cool=Math.max(0,this.cool-dt);
-      this.hurtT=Math.max(0,this.hurtT-dt);
+    soothe(v) {
+      this.san = clamp(this.san + v, 0, this.sanMax);
+    }
 
-      this.invulnT=Math.max(0,this.invulnT-dt);
-      this.kbVx=lerp(this.kbVx,0,1-Math.pow(0.001,dt));
+    heal(v) {
+      this.hp = clamp(this.hp + v, 0, this.hpMax);
+    }
 
-      // status timers
-      for(const k in this.status) this.status[k]=Math.max(0,this.status[k]-dt);
-      this.friendBoostT=Math.max(0,this.friendBoostT-dt);
-
-      if(Input.consume("Digit1")) this.switchWeapon(0);
-      if(Input.consume("Digit2")) this.switchWeapon(1);
-      if(Input.consume("Digit3")) this.switchWeapon(2);
-      if(Input.consume("Digit4")) this.switchWeapon(3);
-
-      const slowMul = this.status.slowT>0 ? 0.62 : 1.0;
-      const griefMul = this.status.griefT>0 ? 0.85 : 1.0;
-
-      const dir=Input.axisX();
-      this.vx=(dir*190*slowMul*griefMul) + this.kbVx;
-      if(dir!==0) this.facing=dir>0?1:-1;
-
-      if(Input.jump() && this.grounded){
-        this.vy=-470*(slowMul*0.95);
-        this.grounded=false;
-        AudioSys.ping("thump",0.6);
+    applyEffect(kind, game) {
+      if (kind === "WIGGLE") {
+        this.status.wiggleT = Math.max(this.status.wiggleT, 5);
+        game.fx.triggerWiggle(5);
+        game.whisper("THE CORRIDOR BREATHES SIDEWAYS.", 2.0);
       }
-
-      this.vy += g.world.gravity*dt;
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-      g.world.collide(this);
-      if(this.x<g.world.cam.x) this.x=g.world.cam.x;
-
-      // sanity drain: grief is nasty
-      const base = (g.tension.mode==="frenetic") ? 0.72 : 0.45;
-      const griefDrain = (this.status.griefT>0) ? 2.2 : 0;
-      this.san = clamp(this.san - dt*(base + griefDrain), 0, this.sanMax);
-
-      this.lantern = 70 + (this.san/this.sanMax)*260;
-
-      // aim drift
-      const mx=Input.mouse.nx*RW + g.world.cam.x;
-      const my=Input.mouse.ny*RH;
-      const drift=(1-this.san/this.sanMax)*14 + (this.status.shiverT>0?10:0) + (this.status.griefT>0?9:0);
-      const ax=mx+rand(-drift,drift);
-      const ay=my+rand(-drift,drift);
-
-      // fire
-      if(this.weapon.type==="laser"){
-        // continuous while held
-        if(Input.mouse.down){
-          g.fireLaser(this, ax, ay, dt);
-        }
-      } else if(Input.mouse.down && this.cool<=0){
-        this.cool = this.weapon.rate * (this.status.jamT>0?1.8:1.0);
-        g.fireWeapon(this, ax, ay);
+      if (kind === "MEMORY") {
+        this.status.memoryT = Math.max(this.status.memoryT, 5);
+        game.fx.triggerMemory(5);
+        game.whisper("SOMETHING YOU REMEMBER IS REMEMBERING YOU.", 2.0);
       }
-
-      // bond command: buffs friend briefly
-      if(this.weapon.type==="bond" && Input.mouse.down && this.cool<=0){
-        this.cool=this.weapon.rate;
-        if(this.hasFriend){
-          this.friendBoostT = 3.0;
-          g.whisper("BOND: THE FRIEND LAUGHS QUIETER, SHOOTS FASTER.", 1.8);
-          AudioSys.ping("thump",0.8);
-        } else {
-          g.whisper("NO FRIEND ANSWERS.", 1.2);
-          AudioSys.ping("thump",0.5);
+      if (kind === "CONFUSION") {
+        if (Input.confusionEnabled) {
+          Input.confusionT = Math.max(Input.confusionT, 3.5);
+          game.fx.triggerPaletteShift(2.0);
+          game.whisper("LEFT MEANS RIGHT. JUST FOR NOW.", 1.8);
         }
       }
+      if (kind === "GLITCH") {
+        game.fx.triggerGlitch(1.2);
+        game.fx.triggerFace(ASSETS.get("assets/face3.png"), 0.25);
+        game.whisper("A FACE BORROWS YOUR SCREEN.", 1.4);
+      }
+      if (kind === "FRIEND") {
+        this.hasFriend = true;
+        this.friendBoostT = Math.max(this.friendBoostT, 8);
+        game.whisper("A FRIEND-FORM CONTRACT SIGNS ITSELF.", 2.0);
+      }
+      if (kind === "LASER") {
+        this.hasLaser = true;
+        game.whisper("THE LASER IS WARM. LIKE MEAT.", 2.0);
+      }
     }
 
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get("player");
-      const sp=new Sprite(img,24,36,6,10);
-      const moving=Math.abs(this.vx)>5;
-      const frame=moving?null:0;
-      sp.draw(ctx,sx-4,sy-4,this.animT,this.facing<0,1,1,frame);
+    update(dt, game) {
+      this.anim += dt * 60;
+      this.invT = Math.max(0, this.invT - dt);
 
-      if(this.invulnT>0){
-        ctx.globalAlpha=0.14; ctx.fillStyle="#fff";
-        ctx.fillRect(sx-2,sy-2,20,34);
-        ctx.globalAlpha=1;
+      // decay sanity slowly
+      this.san = Math.max(0, this.san - dt * 0.9);
+
+      // status
+      this.status.slowT = Math.max(0, this.status.slowT - dt);
+      this.status.griefT = Math.max(0, this.status.griefT - dt);
+      this.status.wiggleT = Math.max(0, this.status.wiggleT - dt);
+      this.status.memoryT = Math.max(0, this.status.memoryT - dt);
+      this.friendBoostT = Math.max(0, this.friendBoostT - dt);
+
+      // movement
+      let dir = Input.readDir();
+      if (dir !== 0) this.facing = dir > 0 ? 1 : -1;
+
+      let sp = this.speed;
+      if (this.status.slowT > 0) sp *= 0.62;
+      if (this.status.griefT > 0) sp *= 0.70;
+
+      this.vx = dir * sp;
+
+      if (Input.wantJump() && this.grounded) {
+        this.vy = -this.jump;
+        AudioSys.ping("hit", 0.25);
+      }
+
+      // physics
+      this.vy += 520 * dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      // camera bounds (don't go behind camera too much)
+      if (this.x < game.world.camx + 10) this.x = game.world.camx + 10;
+
+      // collide
+      game.world.collideEntity(this);
+
+      // aiming
+      let ax = Input.mouse.x + game.world.camx;
+      let ay = Input.mouse.y;
+
+      // if confused, add aim drift (NOT random left/right!)
+      if (Input.confusionEnabled && Input.confusionT > 0) {
+        const drift = Math.sin(game.time * 6) * 14;
+        ax += drift;
+        ay += Math.cos(game.time * 5) * 8;
+      }
+
+      // shooting
+      const wpn = this.currentWeapon();
+      this.shootCD = Math.max(0, this.shootCD - dt);
+
+      if (Input.mouse.down) {
+        if (wpn.type === "gun") {
+          if (this.shootCD <= 0) {
+            this.shootCD = wpn.rate;
+            game.fireGun(this, ax, ay);
+          }
+        } else if (wpn.type === "laser") {
+          // continuous
+          game.fireLaser(this, ax, ay, dt);
+        }
+      }
+
+      // lantern depends on sanity
+      this.lantern = 90 + (this.san / this.sanMax) * 170;
+    }
+
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      const y = this.y | 0;
+
+      // optional image sprite
+      const im = ASSETS.get("assets/player.png");
+      if (im) {
+        // simple 2-frame animation by time slicing if sprite sheet; else draw as-is
+        // if your sprite is a sheet (32x32 frames), adapt here.
+        ctx.drawImage(im, x - 6, y - 4, 32, 32);
+        return;
+      }
+
+      // procedural pixel sprite
+      drawPixelSprite(ctx, x, y, this.anim, "player", pal);
+
+      // inv flash
+      if (this.invT > 0) {
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x, y, this.w, this.h);
+        ctx.globalAlpha = 1;
       }
     }
   }
 
-  /*************************
-   * Friend Companion
-   *************************/
-  class Companion extends Entity {
-    constructor(player){
-      super(player.x, player.y, 10, 10);
-      this.p=player;
-      this.animT=rand(0,10);
-      this.orbit=rand(0,6.28);
-      this.cool=0.15;
+  class Daughter extends Entity {
+    constructor(x) {
+      super(x, 0, 16, 26);
+      this.saved = false;
+      this._wanderT = rand(0.5, 2.2);
+      this._dir = chance(0.5) ? -1 : 1;
+      this.anim = rand(0, 99);
     }
-    update(dt,g){
-      this.animT+=dt;
-      this.cool=Math.max(0,this.cool-dt);
-
-      this.orbit += dt*(2.0 + (this.p.friendBoostT>0?2.5:0));
-      const ox = Math.cos(this.orbit)*18;
-      const oy = -18 + Math.sin(this.orbit*1.3)*8;
-      this.x = this.p.x + ox;
-      this.y = this.p.y + oy;
-
-      // shoot nearest enemy
-      if(this.cool<=0){
-        const target = g.findNearestEnemy(this.x,this.y, 220);
-        if(target){
-          const [nx,ny]=norm(target.cx-this.x, target.cy-this.y);
-          const sp=520;
-          const dmg= (this.p.friendBoostT>0)?7:5;
-          g.bullets.push(new Bullet(this.x,this.y, nx*sp, ny*sp, dmg, 0, "friend"));
-          this.cool = (this.p.friendBoostT>0)?0.09:0.15;
-          AudioSys.ping("shoot",0.35);
-        }
+    update(dt, game) {
+      this.anim += dt * 60;
+      if (this.saved) {
+        // hover beside player
+        const p = game.player;
+        const tx = p.x - 22;
+        this.x = lerp(this.x, tx, 1 - Math.pow(0.001, dt));
+        this.y = lerp(this.y, p.y - 4 + Math.sin(game.time * 3) * 2, 1 - Math.pow(0.001, dt));
+        return;
       }
+
+      this._wanderT -= dt;
+      if (this._wanderT <= 0) {
+        this._wanderT = rand(0.8, 2.8);
+        this._dir = chance(0.5) ? -1 : 1;
+      }
+
+      // avoid enemies slightly
+      let fear = 0;
+      for (const e of game.enemies) {
+        const d = Math.abs(e.x - this.x);
+        if (d < 70) { fear += (70 - d) / 70; }
+      }
+      const sp = 28 + fear * 42;
+      this.vx = this._dir * sp;
+
+      this.vy += 520 * dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      game.world.collideEntity(this);
+
+      // keep within camera forward region
+      if (this.x < game.world.camx + 30) this.x = game.world.camx + 30;
     }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get("friend");
-      const sp=new Sprite(img,20,20,6,12);
-      sp.draw(ctx,sx-5,sy-5,this.animT,false,1,1,null);
-      ctx.globalAlpha=0.10;
-      ctx.fillStyle=PAL.accent;
-      ctx.fillRect(sx-10,sy-10,28,28);
-      ctx.globalAlpha=1;
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      const y = this.y | 0;
+
+      const im = ASSETS.get("assets/daughter.png");
+      if (im) {
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(im, x - 8, y - 8, 32, 32);
+        ctx.globalAlpha = 1;
+        return;
+      }
+
+      // glow
+      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = pal.child;
+      ctx.beginPath();
+      ctx.arc(x + 8, y + 10, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      drawPixelSprite(ctx, x, y, this.anim, "daughter", pal);
     }
   }
-
-  /*************************
-   * Enemies
-   *************************/
-  const ENEMY_DEF = {
-    ANGEL:  {key:"angel",  fw:28,fh:28,frames:6,fps:12, w:18,h:18, hp:18, speed:90,  touch:6,  behavior:"fly"},
-    FIEND:  {key:"fiend",  fw:32,fh:32,frames:6,fps:12, w:20,h:20, hp:38, speed:70,  touch:11, behavior:"stalker"},
-    GOLEM:  {key:"golem",  fw:36,fh:36,frames:6,fps:8,  w:24,h:28, hp:95, speed:35,  touch:14, behavior:"tank"},
-    CRAZY:  {key:"crazy",  fw:24,fh:34,frames:6,fps:14, w:14,h:28, hp:18, speed:145, touch:5,  behavior:"dash"},
-    WAILER: {key:"wailer", fw:32,fh:32,frames:6,fps:10, w:18,h:18, hp:28, speed:65,  touch:4,  behavior:"aura"},
-  };
 
   class Enemy extends Entity {
-    constructor(x,y,type="ANGEL"){
-      const d=ENEMY_DEF[type]||ENEMY_DEF.ANGEL;
-      super(x,y,d.w,d.h);
-      this.type=type;
-      this.def=d;
-      this.hp=d.hp;
-      this.cool=rand(0.2,0.9);
-      this.animT=rand(0,10);
-      this.stateT=0;
-      this.auraT=0;
+    constructor(x, y, type) {
+      super(x, y, 18, 26);
+      this.type = type; // angel|fiend|golem|crazy|wailer
+      this.anim = rand(0, 99);
+      this.onGround = true;
+      this.touchDmg = 5;
+
+      // tuned HP/damage so it’s winnable
+      if (type === "angel") { this.hp = 24; this.speed = 40; this.touchDmg = 6; }
+      if (type === "fiend") { this.hp = 36; this.speed = 36; this.touchDmg = 8; }
+      if (type === "golem") { this.hp = 75; this.speed = 22; this.touchDmg = 10; this.w = 20; this.h = 30; }
+      if (type === "crazy") { this.hp = 16; this.speed = 62; this.touchDmg = 4; this.w = 16; this.h = 28; }
+      if (type === "wailer") { this.hp = 28; this.speed = 26; this.touchDmg = 3; this.w = 20; this.h = 20; }
     }
-    hit(dmg,g){
-      this.hp-=dmg;
-      // gore on hit
-      for(let i=0;i<6;i++) g.fx(this.cx,this.cy,"blood",1);
-      if(chance(0.25)) g.fx(this.cx,this.cy,"gib",1);
-      AudioSys.ping("hit",0.5);
 
-      if(this.hp<=0){
-        this.dead=true;
-        // death gore burst (still pixel/abstract)
-        for(let i=0;i<22;i++) g.fx(this.cx,this.cy,"blood",1);
-        for(let i=0;i<10;i++) g.fx(this.cx,this.cy,"gib",1);
-        g.addDecal(this.cx, g.world.groundY-1, "blood");
-        g.player.killCount++;
+    hit(dmg, game) {
+      this.hp -= dmg;
 
-        // small sustain to keep the game winnable
-        if(chance(0.25)) g.player.soothe(3);
-        if(chance(0.18)) g.player.heal(2);
+      // gore feedback
+      const pal = game.pal;
+      for (let i = 0; i < Math.min(10, 2 + (dmg / 6) | 0); i++) game.spawnParticle(this.cx, this.cy, chance(0.7) ? "blood" : "gib");
 
-        // rare friend unlock drop
-        if(!g.player.hasFriend && chance(0.02)) g.spawnPickup(this.cx,this.cy,"FRIEND");
+      if (chance(0.25)) game.fx.triggerGlitch(0.08);
+      AudioSys.ping("hit", 0.6);
+
+      if (this.hp <= 0) {
+        this.dead = true;
+        game.addDecal(this.cx, game.world.groundY - 1, "blood");
+        // drop chance
+        if (chance(0.20)) game.spawnPickup(this.x + 6, game.world.groundY - 16, chance(0.5) ? "HP" : "SAN");
+        if (chance(0.06)) game.spawnPickup(this.x + 6, game.world.groundY - 16, "GLITCH");
       }
     }
-    update(dt,g){
-      this.animT+=dt;
-      this.cool=Math.max(0,this.cool-dt);
 
-      const p=g.player;
-      const dx=p.cx-this.cx;
-      const dy=p.cy-this.cy;
+    update(dt, game) {
+      this.anim += dt * 60;
 
-      const beh=this.def.behavior;
+      const p = game.player;
+      const dx = p.x - this.x;
 
-      if(beh==="fly"){
-        const [nx,ny]=norm(dx, dy + Math.sin(g.time*2 + this.x*0.01)*10);
-        this.vx=nx*this.def.speed;
-        this.vy=ny*this.def.speed;
-        this.x+=this.vx*dt;
-        this.y+=this.vy*dt;
-        this.y=Math.min(this.y, g.world.groundY-40);
-      }
+      // behaviors
+      if (this.type === "wailer") {
+        // float and “grief” debuff
+        this.y += Math.sin(game.time * 2 + this.x * 0.01) * 0.35;
+        this.vx = Math.sign(dx) * this.speed;
+        this.x += this.vx * dt;
 
-      if(beh==="stalker"){
-        // fiend: stalk then leap
-        this.stateT -= dt;
-        if(this.stateT<=0){
-          this.stateT = rand(0.6, 1.3);
-          // occasional pounce
-          if(chance(0.35) && this.cool<=0){
-            const [nx,ny]=norm(dx, dy-20);
-            this.vx = nx*(170+g.tension.heat*60);
-            this.vy = -rand(210, 300);
-            this.cool = 1.0;
-          } else {
-            this.vx = Math.sign(dx) * (this.def.speed + g.tension.heat*30);
-          }
+        // grief aura
+        if (dist(this.cx, this.cy, p.cx, p.cy) < 46) {
+          p.status.griefT = Math.max(p.status.griefT, 1.2);
+          if (chance(0.03 * dt * 60)) game.fx.triggerFace(ASSETS.get("assets/face1.png"), 0.12);
         }
-        this.vy += g.world.gravity*dt;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        g.world.collide(this);
-      }
-
-      if(beh==="tank"){
-        // golem: slow + heavy
-        this.vx = Math.sign(dx) * (this.def.speed + g.tension.heat*15);
-        this.vy += g.world.gravity*dt;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        g.world.collide(this);
-        if(this.grounded && chance(0.01) && this.cool<=0){
-          this.vy=-rand(160,220);
-          this.cool=1.2;
-        }
-      }
-
-      if(beh==="dash"){
-        // crazy: bursts
-        this.stateT -= dt;
-        if(this.stateT<=0){
-          this.stateT = rand(0.25, 0.55);
-          this.vx = Math.sign(dx) * (this.def.speed + rand(0,60));
-          if(chance(0.12) && this.cool<=0){ this.vy=-rand(260,320); this.cool=0.8; }
-        }
-        this.vy += g.world.gravity*dt;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        g.world.collide(this);
-      }
-
-      if(beh==="aura"){
-        // grief wailer: floats, applies slow+grief if close
-        const [nx,ny]=norm(dx, dy);
-        this.vx = nx*this.def.speed;
-        this.vy = ny*(this.def.speed*0.7) + Math.sin(g.time*3+this.x*0.01)*18;
-        this.x += this.vx*dt;
-        this.y += this.vy*dt;
-        this.y = clamp(this.y, 40, g.world.groundY-60);
-
-        const dist = Math.hypot(dx,dy);
-        if(dist < 110){
-          p.status.slowT = Math.max(p.status.slowT, 0.9);
-          p.status.griefT = Math.max(p.status.griefT, 1.1);
-          // subtle sanity jab
-          if(chance(0.06)) p.san = clamp(p.san - 0.5, 0, p.sanMax);
-          if(chance(0.03)) g.whisper("GRIEF MAKES YOUR LIMBS HEAVY.", 1.2);
-        }
-      }
-
-      // contact damage (i-frames prevent blender)
-      if(aabb(this.x,this.y,this.w,this.h, p.x,p.y,p.w,p.h) && this.cool<=0){
-        p.hurt(this.def.touch, this.cx);
-        this.cool = 0.95;
-        for(let i=0;i<8;i++) g.fx(p.cx,p.cy,"blood",1);
-        AudioSys.ping("hit",0.7);
-      }
-
-      if(this.x < g.world.cam.x-240) this.dead=true;
-    }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get(this.def.key);
-      const sp=new Sprite(img,this.def.fw,this.def.fh,this.def.frames,this.def.fps);
-      sp.draw(ctx, sx-((this.def.fw-this.w)/2)|0, sy-((this.def.fh-this.h)/2)|0, this.animT, this.vx<0, 1, 1, null);
-
-      // aura overlay for wailer
-      if(this.type==="WAILER"){
-        ctx.globalAlpha=0.10;
-        ctx.fillStyle=PAL.accent;
-        ctx.fillRect(sx-16,sy-16,44,44);
-        ctx.globalAlpha=1;
-      }
-    }
-  }
-
-  /*************************
-   * Patient 07 (Daughter)
-   *************************/
-  class Patient07 extends Entity {
-    constructor(x){
-      super(x,0,14,24);
-      this.animT=rand(0,10);
-      this.vx=rand(-35,35);
-      this.timer=rand(0.8,2.0);
-      this.state="wander";
-      this.cowerT=0;
-      this.saved=false;
-    }
-    update(dt,g){
-      this.animT+=dt;
-      this.timer-=dt;
-
-      if(this.saved){
-        // follow slightly once saved
-        const p=g.player;
-        const dx=p.cx-this.cx;
-        this.vx = clamp(dx*0.9, -75, 75);
-      } else if(this.state==="cower"){
-        this.vx=0;
-        this.cowerT-=dt;
-        if(this.cowerT<=0) this.state="wander";
       } else {
-        if(this.timer<=0){
-          this.vx=rand(-40,40);
-          this.timer=rand(1.0,2.3);
+        // grounded AI
+        const sp = this.speed;
+        this.vx = Math.sign(dx) * sp;
+
+        // crazies sometimes feint / stutter (not random direction each frame)
+        if (this.type === "crazy") {
+          const st = Math.sin((game.time + this.x * 0.01) * 5);
+          this.vx *= (0.75 + 0.25 * st);
         }
-        for(const b of g.bullets){
-          if(Math.hypot(b.x-this.x,b.y-this.y)<80){
-            this.state="cower"; this.cowerT=1.2; break;
-          }
+
+        // golem occasionally pauses before charge
+        if (this.type === "golem") {
+          const phase = (Math.floor(game.time * 2 + this.x * 0.001) % 6);
+          if (phase === 0) this.vx *= 0.35;
         }
+
+        this.vy += 520 * dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        game.world.collideEntity(this);
       }
 
-      this.vy += g.world.gravity*dt;
-      this.x += this.vx*dt;
-      this.y += this.vy*dt;
-      g.world.collide(this);
-
-      const left=g.world.cam.x+12;
-      const right=g.world.cam.x+RW-32;
-      if(this.x<left) this.vx=Math.abs(this.vx)+6;
-      if(this.x>right) this.vx=-Math.abs(this.vx)-6;
-
-      // touching saves (mission)
-      if(!this.saved && aabb(this.x,this.y,this.w,this.h, g.player.x,g.player.y,g.player.w,g.player.h)){
-        if(g.mission && g.mission.id==="SAVE_CHILD"){
-          this.saved=true;
-          g.whisper("YOU TOUCHED PATIENT 07. THE WARD HATES THAT.", 2.4);
-          AudioSys.ping("thump",1.0);
-          g.mission.complete(g, "Patient 07 is alive. You didn’t have to be good. You chose it.");
-        }
+      // touch damage (tuned)
+      if (aabb(this.x, this.y, this.w, this.h, p.x, p.y, p.w, p.h)) {
+        p.hurt(this.touchDmg * dt * 6, this.x);
+        if (chance(0.30)) game.spawnParticle(p.cx, p.cy, "blood");
       }
     }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get("child");
-      const sp=new Sprite(img,22,30,4,6);
-      sp.draw(ctx,sx-4,sy-6,this.animT,false,1,1,null);
 
-      ctx.globalAlpha=0.12;
-      ctx.fillStyle=PAL.sick;
-      ctx.fillRect(sx-10,sy-12,34,40);
-      ctx.globalAlpha=1;
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      const y = this.y | 0;
+      if (x < -40 || x > RW + 40) return;
 
-      if(!this.saved && g.mission && g.mission.id==="SAVE_CHILD"){
-        ctx.globalAlpha=0.9;
-        ctx.fillStyle=PAL.paper;
-        ctx.font="10px ui-monospace, monospace";
-        ctx.fillText("TOUCH", sx-6, sy-14);
-        ctx.globalAlpha=1;
+      // optional PNG sprites
+      const map = {
+        angel: "assets/angel.png",
+        fiend: "assets/fiend.png",
+        golem: "assets/golem.png",
+        crazy: "assets/crazy.png",
+        wailer: "assets/wailer.png",
+      };
+      const im = ASSETS.get(map[this.type]);
+      if (im) {
+        const size = 32;
+        ctx.drawImage(im, x - 6, y - 6, size, size);
+        return;
       }
+
+      drawPixelSprite(ctx, x, y, this.anim, this.type, pal);
     }
   }
 
-  /*************************
-   * Pickups (hp/sanity/substances/friend)
-   *************************/
-  class Pickup extends Entity {
-    constructor(x,y,kind){
-      super(x,y,10,10);
-      this.kind=kind; // HP | SAN | WIGGLE | MEMORY | FRIEND
-      this.bob=rand(0,6.28);
+  class Companion {
+    constructor(player) {
+      this.p = player;
+      this.x = player.x - 20;
+      this.y = player.y - 4;
+      this.t = 0;
+      this.cd = 0;
     }
-    update(dt,g){
-      this.bob += dt*2.2;
-      this.y = g.world.groundY - 16 + Math.sin(this.bob)*2;
-      if(aabb(this.x,this.y,this.w,this.h, g.player.x,g.player.y,g.player.w,g.player.h)){
-        this.dead=true;
-        if(this.kind==="HP"){ g.player.heal(28); g.whisper("FLESH CLOSES.", 1.3); }
-        if(this.kind==="SAN"){ g.player.soothe(34); g.whisper("LIGHT RETURNS (WRONG).", 1.3); }
-        if(this.kind==="WIGGLE"){ g.player.applySubstance("WIGGLE",g); }
-        if(this.kind==="MEMORY"){ g.player.applySubstance("MEMORY",g); }
-        if(this.kind==="FRIEND"){ g.player.applySubstance("FRIEND",g); }
-        AudioSys.ping("thump",0.7);
-      }
-    }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      ctx.globalAlpha=0.9;
-      if(this.kind==="HP"){ ctx.fillStyle=PAL.danger; ctx.fillRect(sx,sy,10,10); }
-      else if(this.kind==="SAN"){ ctx.fillStyle=PAL.accent; ctx.fillRect(sx,sy,10,10); }
-      else if(this.kind==="WIGGLE"){ ctx.fillStyle=PAL.slime; ctx.fillRect(sx,sy,10,10); }
-      else if(this.kind==="MEMORY"){ ctx.fillStyle=PAL.paper; ctx.fillRect(sx,sy,10,10); }
-      else { ctx.fillStyle="#ffd36a"; ctx.fillRect(sx,sy,10,10); }
-      ctx.globalAlpha=1;
-      ctx.font="9px ui-monospace, monospace";
-      ctx.fillStyle="#000";
-      ctx.fillText(this.kind[0], sx+3, sy+8);
-    }
-  }
+    update(dt, game) {
+      this.t += dt;
+      const p = this.p;
+      // hover behind
+      const tx = p.x - 18;
+      const ty = p.y - 6 + Math.sin(game.time * 3) * 2;
+      this.x = lerp(this.x, tx, 1 - Math.pow(0.0008, dt));
+      this.y = lerp(this.y, ty, 1 - Math.pow(0.0008, dt));
 
-  /*************************
-   * Missions
-   *************************/
-  class Mission {
-    constructor(id, name){
-      this.id=id;
-      this.name=name;
-      this.done=false;
-      this.fail=false;
-      this.timer=0;
-      this.goalDepth=0;
-      this.text="";
-      this._winText="";
-    }
-    start(g){
-      if(this.id==="SURVIVE_120"){
-        this.timer=120.0;
-        this.text="Survive 2:00";
-        // start frenetic immediately
-        g.tension.mode="frenetic";
-        g.whisper("MISSION: SURVIVE. THE WARD WANTS FOOTAGE.", 2.0);
-      }
-      if(this.id==="SAVE_CHILD"){
-        this.text="Save Patient 07 (Touch)";
-        g.whisper("MISSION: FIND HER. TOUCH HER. DON'T PANIC.", 2.0);
-      }
-      if(this.id==="REACH_CHAPEL"){
-        this.goalDepth=1000;
-        this.text="Reach the Chapel (1000m)";
-        g.whisper("MISSION: WALK UNTIL THE WARD RUNS OUT OF ROOMS.", 2.0);
-      }
-    }
-    update(dt,g){
-      if(this.done||this.fail) return;
-
-      if(this.id==="SURVIVE_120"){
-        this.timer=Math.max(0,this.timer-dt);
-        if(this.timer<=0){
-          this.complete(g, "You endured 2:00. The ward applauds with wet hands.");
-        }
-      }
-      if(this.id==="REACH_CHAPEL"){
-        const d=Math.floor(g.player.x/10);
-        if(d>=this.goalDepth){
-          this.complete(g, "You reached the Chapel. Something inside you believes it matters.");
+      this.cd -= dt;
+      if (this.cd <= 0) {
+        const e = game.findNearestEnemy(this.x, this.y, 160);
+        if (e) {
+          this.cd = (p.friendBoostT > 0) ? 0.15 : 0.30;
+          const ang = Math.atan2(e.cy - this.y, e.cx - this.x);
+          const sp = 420;
+          game.bullets.push(new Bullet(this.x, this.y, Math.cos(ang) * sp, Math.sin(ang) * sp, 6, "friend"));
+          if (chance(0.25)) AudioSys.ping("shoot", 0.35);
+        } else {
+          this.cd = 0.22;
         }
       }
     }
-    complete(g, winText){
-      if(this.done) return;
-      this.done=true;
-      this._winText=winText;
-      g.win(winText);
+    draw(ctx, camx, pal) {
+      const x = (this.x - camx) | 0;
+      const y = (this.y) | 0;
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = pal.child;
+      ctx.fillRect(x, y, 6, 6);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(x + 2, y + 2, 1, 1);
+      ctx.fillRect(x + 4, y + 2, 1, 1);
+      ctx.globalAlpha = 1;
     }
   }
 
-  /*************************
-   * Tension
-   *************************/
+  /********************************************************************
+   * Tension/Atmosphere Manager
+   ********************************************************************/
   class Tension {
-    constructor(){
-      this.mode="atmosphere";
-      this.heat=0;
-      this.spawnT=0;
-      this.depth=0;
-      this.bossIndex=0;
+    constructor() {
+      this.mode = "atmosphere"; // atmosphere|frenetic
+      this.heat = 0.0;          // 0..1
+      this.spawnTimer = 0;
+      this.triggerX = 220;      // distance to flip to frenetic
     }
-    update(dt,g){
-      this.depth=Math.floor(g.player.x/10);
-      const target=(this.mode==="frenetic"||this.mode==="boss")?1:0;
-      this.heat=lerp(this.heat,target,1-Math.pow(0.0009,dt));
+    update(dt, game) {
+      // flip tension: can be triggered by x distance or by mission urgency
+      const depth = game.player.x / 10;
+      const shouldFrenetic =
+        depth > this.triggerX ||
+        (game.mission?.id === "SURVIVE_120" && game.mission.timeLeft < 70) ||
+        (game.mission?.id === "SAVE_CHILD" && !game.daughterSaved && depth > 180);
 
-      if(this.mode==="atmosphere"){
-        // trigger frenetic after threshold OR if mission is survive
-        if(g.player.x>g.world.thresholdX || (g.mission && g.mission.id==="SURVIVE_120")){
-          this.mode="frenetic";
-          this.spawnT=0.35;
-          g.whisper("THE ASYLUM REMEMBERS YOU.",2.0);
-          AudioSys.ping("thump",1.0);
+      this.mode = shouldFrenetic ? "frenetic" : "atmosphere";
+
+      const target = (this.mode === "frenetic") ? 1 : 0.2;
+      this.heat = lerp(this.heat, target, 1 - Math.pow(0.003, dt));
+    }
+  }
+
+  class AtmosphereManager {
+    constructor() {
+      this.name = "ward";
+      this.nextShiftAt = 30;
+    }
+    update(dt, game) {
+      // shift palette occasionally for “change in atmosphere”
+      // this is *controlled*, not chaotic per frame
+      if (game.time > this.nextShiftAt) {
+        this.nextShiftAt = game.time + rand(25, 40);
+
+        const depth = game.player.x;
+        if (depth > 2400 && chance(0.55)) this.name = "chapel";
+        else if (chance(0.20)) this.name = "meltdown";
+        else this.name = "ward";
+
+        game.fx.triggerPaletteShift(2.5);
+        game.whisper(
+          this.name === "chapel" ? "A QUIETER ROOM. WRONG KIND OF QUIET." :
+          this.name === "meltdown" ? "THE LIGHTS ARGUE WITH THEMSELVES." :
+          "THE WARD RETURNS TO ITS BREATH.",
+          2.0
+        );
+      }
+    }
+    palette() { return PALETTES[this.name]; }
+  }
+
+  /********************************************************************
+   * Dialog system (moral dilemmas + lore)
+   ********************************************************************/
+  class Dialogue {
+    constructor({ title, body, choices }) {
+      this.title = title;
+      this.body = body;
+      this.choices = choices;
+    }
+  }
+
+  class DialogueStack {
+    constructor() { this.stack = []; }
+    push(d) { this.stack.push(d); }
+    pop() { return this.stack.pop(); }
+    top() { return this.stack[this.stack.length - 1]; }
+    get active() { return this.stack.length > 0; }
+  }
+
+  const Dialogs = new DialogueStack();
+
+  /********************************************************************
+   * Mission system
+   ********************************************************************/
+  class Mission {
+    constructor(id) {
+      this.id = id;
+      this.done = false;
+      this.failed = false;
+      this.timeLeft = (id === "SURVIVE_120") ? 120 : 0;
+    }
+    title() {
+      if (this.id === "SURVIVE_120") return "Mission: Survive 2:00";
+      if (this.id === "SAVE_CHILD") return "Mission: Save Patient 07";
+      return "Mission: Reach the Exit";
+    }
+    update(dt, game) {
+      if (this.done || this.failed) return;
+
+      if (this.id === "SURVIVE_120") {
+        this.timeLeft = Math.max(0, this.timeLeft - dt);
+        if (this.timeLeft <= 0) {
+          this.done = true;
+          game.win("You lasted.\n\nThe ward doesn’t congratulate you.\nIt just opens a door it didn’t have.");
         }
       }
 
-      // Bosses only on chapel-run (optional intensity)
-      const bossAllowed = (g.mission && g.mission.id==="REACH_CHAPEL");
-      if(bossAllowed && !g.boss && this.mode!=="boss"){
-        const wantBoss =
-          (this.bossIndex===0 && this.depth>260) ||
-          (this.bossIndex===1 && this.depth>620);
-        if(wantBoss){
-          this.mode="boss";
-          g.startBoss(this.bossIndex);
-          this.bossIndex++;
-          return;
+      if (this.id === "SAVE_CHILD") {
+        if (game.daughter && game.daughter.saved) {
+          this.done = true;
+          game.win("You touched her hand.\n\nShe becomes a light that refuses to die.\nGood Ending (for now).");
         }
       }
 
-      if(this.mode==="frenetic" && !g.boss){
-        this.spawnT -= dt;
-        if(this.spawnT<=0){
-          const diff=g.difficulty();
-          this.spawnT = rand(diff.spawnEvery*0.75, diff.spawnEvery*1.25);
-          g.spawnWave();
+      if (this.id === "REACH_EXIT") {
+        if (game.player.x > game.world.exitX - 60) {
+          this.done = true;
+          game.win("You found the exit.\n\nOutside is not better.\nJust wider.");
         }
       }
     }
   }
 
-  /*************************
-   * Visual FX (wiggle + memory past echoes)
-   *************************/
-  class VisualFX {
-    constructor(){
-      this.noise=0.18;
-      this.scan=0.12;
-      this.vign=0.55;
-      this.allowFaces=true;
+  /********************************************************************
+   * Game core
+   ********************************************************************/
+  class Game {
+    constructor() {
+      this.state = "menu"; // menu|play|end
+      this.world = new World();
+      this.atmo = new AtmosphereManager();
+      this.tension = new Tension();
+      this.fx = new VisualFX();
 
-      this.faceFlashT=0;
-      this.faceAlpha=0;
-      this.faceKey="face1";
-      this.glitchKick=0;
+      this.player = null;
+      this.friend = null;
 
-      // “past echoes”
-      this.echoT=0;
-      this.echo = []; // {img:canvas, a, x,y, life}
-      this.echoBuf=document.createElement("canvas");
-      this.echoBuf.width=RW; this.echoBuf.height=RH;
-      this.echoCtx=this.echoBuf.getContext("2d",{alpha:true});
-      this.echoCtx.imageSmoothingEnabled=false;
+      this.enemies = [];
+      this.bullets = [];
+      this.particles = [];
+      this.decals = [];
+      this.pickups = [];
+
+      this.mission = null;
+
+      this.daughter = null;
+      this.daughterSpawned = false;
+      this.daughterSaved = false;
+
+      this.time = 0;
+      this.whisperText = "";
+      this.whisperT = 0;
+
+      // spawn pacing
+      this.spawnAcc = 0;
+      this.lastDilemmaAt = 18;
+      this._mercy = 0;
+
+      // laser beam visual
+      this._laser = null;
     }
 
-    update(dt,g){
-      const sanity=g.player?(g.player.san/g.player.sanMax):1;
-      const heat=g.tension.heat;
-      const stress=clamp((1-sanity)*0.95 + heat*0.65 + (g.boss?0.35:0),0,1);
-      const zoneNoise=g.atmo?g.atmo.noiseMult:1.0;
+    whisper(msg, t = 1.8) {
+      this.whisperText = msg;
+      this.whisperT = t;
+    }
 
-      this.noise = lerp(this.noise, (0.10+stress*0.65)*zoneNoise, 1-Math.pow(0.001,dt));
-      this.scan  = lerp(this.scan,  0.06+stress*0.33, 1-Math.pow(0.001,dt));
-      this.vign  = lerp(this.vign,  0.30+stress*0.72, 1-Math.pow(0.001,dt));
+    spawnParticle(x, y, kind) {
+      this.particles.push(new Particle(x, y, kind, this.pal));
+      if (this.particles.length > 1000) this.particles.splice(0, this.particles.length - 1000);
+    }
 
-      // face flash
-      if(this.allowFaces && g.player.status.memoryT>0){
-        const pEvent = 0.004 + (1-sanity)*0.012 + heat*0.006;
-        if(chance(pEvent*dt*60)){
-          this.faceFlashT = rand(0.6, 1.4);
-          this.faceAlpha = rand(0.16, 0.34);
-          this.faceKey = chance(0.5)?"face1":"face2";
-          this.glitchKick = 0.25;
+    addDecal(x, y, type) {
+      this.decals.push(new Decal(x, y, type, this.pal));
+      if (this.decals.length > 240) this.decals.splice(0, this.decals.length - 240);
+    }
+
+    spawnPickup(x, y, kind) {
+      this.pickups.push(new Pickup(x, y, kind));
+    }
+
+    onPickup(kind) {
+      const p = this.player;
+
+      if (kind === "HP") { p.heal(28); this.whisper("A RED PACK THAT SMELLS LIKE METAL.", 1.6); AudioSys.ping("hit", 0.35); return; }
+      if (kind === "SAN") { p.soothe(26); this.whisper("A PURPLE BREATH IN A BOTTLE.", 1.6); AudioSys.ping("hit", 0.35); return; }
+
+      if (kind === "WIGGLE" || kind === "MEMORY" || kind === "CONFUSION" || kind === "GLITCH") {
+        p.applyEffect(kind, this);
+        return;
+      }
+      if (kind === "FRIEND") { p.applyEffect("FRIEND", this); return; }
+      if (kind === "LASER") { p.applyEffect("LASER", this); return; }
+    }
+
+    difficulty() {
+      // Smooth, winnable scaling with mercy when low
+      const depth = this.player.x / 10;
+      const stage = clamp(depth / 650, 0, 1);
+      const hpFrac = this.player.hp / this.player.hpMax;
+      const sanFrac = this.player.san / this.player.sanMax;
+      const struggling = (hpFrac < 0.35) || (sanFrac < 0.30);
+
+      // mercy increases if struggling
+      this._mercy = lerp(this._mercy, struggling ? 1 : 0, 1 - Math.pow(0.01, 1 / 60));
+      const mercy = this._mercy;
+
+      const baseSpawn = lerp(1.35, 0.70, stage);
+      const spawnEvery = baseSpawn + mercy * 0.55;
+
+      const maxEnemies = Math.floor(4 + stage * 6 - mercy * 2); // 4..10 (less when struggling)
+      const eliteChance = clamp(lerp(0.08, 0.30, stage) - mercy * 0.12, 0.05, 0.30);
+
+      return { stage, spawnEvery, maxEnemies, eliteChance };
+    }
+
+    spawnEnemyWave() {
+      const d = this.difficulty();
+      if (this.enemies.length >= d.maxEnemies) return;
+
+      const n = randi(1, 2 + Math.floor(d.stage * 1.2));
+      for (let i = 0; i < n; i++) {
+        if (this.enemies.length >= d.maxEnemies) break;
+
+        const x = this.world.camx + RW + randi(20, 80);
+        let type = "angel";
+
+        const elite = chance(d.eliteChance);
+        if (elite) {
+          const r = Math.random();
+          if (r < 0.28) type = "fiend";
+          else if (r < 0.52) type = "crazy";
+          else if (r < 0.72) type = "wailer";
+          else type = "golem";
+        } else {
+          type = chance(0.62) ? "angel" : "crazy";
+        }
+
+        const y = (type === "wailer") ? (this.world.groundY - randi(80, 120)) : (this.world.groundY - 26);
+        this.enemies.push(new Enemy(x, y, type));
+      }
+
+      // mercy drops
+      if (this._mercy > 0.6 && chance(0.25)) {
+        this.spawnPickup(this.world.camx + randi(120, 220), this.world.groundY - 16, chance(0.5) ? "HP" : "SAN");
+      }
+    }
+
+    findNearestEnemy(x, y, rad) {
+      let best = null;
+      let bd = rad;
+      for (const e of this.enemies) {
+        if (e.dead) continue;
+        const d = dist(x, y, e.cx, e.cy);
+        if (d < bd) { bd = d; best = e; }
+      }
+      return best;
+    }
+
+    fireGun(player, ax, ay) {
+      const wpn = player.currentWeapon();
+      const ox = player.x + (player.facing > 0 ? player.w : 0);
+      const oy = player.y + 14;
+
+      const ang = Math.atan2(ay - oy, ax - ox) + rand(-wpn.spread, wpn.spread);
+      const sp = 520;
+
+      this.bullets.push(new Bullet(ox, oy, Math.cos(ang) * sp, Math.sin(ang) * sp, wpn.dmg, "player"));
+      player.san = Math.max(0, player.san - wpn.sanityCost);
+
+      // recoil micro
+      player.vx += -Math.cos(ang) * 12;
+
+      // sound + small FX
+      AudioSys.ping("shoot", 0.65);
+      if (chance(0.18)) this.spawnParticle(ox, oy, "spark");
+    }
+
+    fireLaser(player, ax, ay, dt) {
+      if (!player.hasLaser) return;
+
+      const wpn = player.currentWeapon();
+      const ox = player.x + (player.facing > 0 ? player.w : 0);
+      const oy = player.y + 14;
+
+      const ang = Math.atan2(ay - oy, ax - ox);
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+
+      let hitLen = 320;
+
+      // stop at obstacles / ground
+      for (let t = 0; t < 320; t += 6) {
+        const px = ox + dx * t;
+        const py = oy + dy * t;
+        if (py > this.world.groundY) { hitLen = t; break; }
+        for (const o of this.world.obstacles) {
+          if (aabb(px, py, 2, 2, o.x, o.y, o.w, o.h)) { hitLen = t; t = 9999; break; }
         }
       }
 
-      this.faceFlashT=Math.max(0,this.faceFlashT-dt);
-      if(this.faceFlashT<=0) this.faceAlpha=lerp(this.faceAlpha,0,1-Math.pow(0.0001,dt));
-      this.glitchKick=Math.max(0,this.glitchKick-dt);
+      // damage enemies along beam
+      const beamR = 8;
+      const dmg = wpn.dmg * dt;
 
-      // past echoes: periodically capture buffer
-      if(g.player.status.memoryT>0){
-        this.echoT -= dt;
-        if(this.echoT<=0){
-          this.echoT = rand(0.35, 0.75);
-          // snapshot current low-res buffer into a small ghost canvas
-          const c=document.createElement("canvas");
-          c.width=RW; c.height=RH;
-          const x=c.getContext("2d",{alpha:true});
-          x.imageSmoothingEnabled=false;
-          x.globalAlpha=0.7;
-          x.drawImage(buf,0,0);
-          x.globalAlpha=0.6;
-          x.fillStyle=PAL.accent;
-          x.fillRect(randi(0,RW-40), randi(0,RH-30), randi(10,40), randi(2,8));
-          x.globalAlpha=1;
-
-          this.echo.push({img:c, x:randi(-8,8), y:randi(-8,8), a:rand(0.08,0.18), life:rand(0.6,1.2)});
+      for (const e of this.enemies) {
+        if (e.dead) continue;
+        // point-to-segment distance (approx)
+        const vx = e.cx - ox, vy = e.cy - oy;
+        const proj = vx * dx + vy * dy;
+        if (proj < 0 || proj > hitLen) continue;
+        const px = ox + dx * proj;
+        const py = oy + dy * proj;
+        const d = dist(e.cx, e.cy, px, py);
+        if (d < beamR) {
+          e.hit(dmg * 1.15, this);
+          if (chance(0.05)) this.spawnParticle(e.cx, e.cy, "blood");
         }
+      }
+
+      // sanity cost per second
+      player.san = Math.max(0, player.san - (player.currentWeapon().sanityCostPerSec || 10.5) * dt);
+
+      this._laser = { x0: ox, y0: oy, x1: ox + dx * hitLen, y1: oy + dy * hitLen, t: 0.06 };
+
+      if (chance(0.22)) AudioSys.ping("laser", 0.38);
+      if (chance(0.15)) this.fx.triggerGlitch(0.06);
+    }
+
+    maybeSpawnDaughter() {
+      if (this.daughterSpawned) return;
+      if (!this.mission) return;
+
+      // for SAVE_CHILD spawn early; otherwise later anxiety appearance
+      if (this.mission.id === "SAVE_CHILD") {
+        this.daughterSpawned = true;
+        this.daughter = new Daughter(this.world.camx + RW + 40);
+        this.whisper("PATIENT 07 IS IN THE HALL.", 2.0);
+        return;
+      }
+
+      if (this.tension.mode === "frenetic" && this.player.x > 1700 && chance(0.006)) {
+        this.daughterSpawned = true;
+        this.daughter = new Daughter(this.world.camx + RW - randi(60, 120));
+        this.whisper("THE DAUGHTER APPEARS. DO NOT SHOOT.", 2.0);
+      }
+    }
+
+    triggerDilemmaOnce() {
+      // moral dilemmas show rarely and only when safe enough
+      if (this.time < this.lastDilemmaAt) return;
+      if (this.tension.mode !== "atmosphere") return;
+      if (this.enemies.length > 0) return;
+
+      if (chance(0.18)) {
+        this.lastDilemmaAt = this.time + rand(25, 35);
+        const p = this.player;
+        const tone = (p.avi === 1) ? "ritual" : (p.avi === 2 ? "brutal" : "flat");
+
+        const body =
+          tone === "ritual"
+            ? `${p.name}, a nurse offers a vial labeled: "MEMORY".\nHer lips move without sound.\n\nDo you drink it?`
+            : tone === "brutal"
+            ? `${p.name}, a deranged patient sits in the trash.\nHe whispers: "I can help you kill."\n\nDo you accept him?`
+            : `${p.name}, a patient stands too close.\nHe asks you to choose what he becomes.\n\nWhat do you choose?`;
+
+        const dlg = new Dialogue({
+          title: "WARD ENCOUNTER",
+          body,
+          choices: [
+            {
+              label: "Accept.",
+              hint: "Gain something. Also gain consequences.",
+              act: () => {
+                if (tone === "brutal") {
+                  this.player.applyEffect("FRIEND", this);
+                } else {
+                  this.player.applyEffect("MEMORY", this);
+                  if (chance(0.35) && Input.confusionEnabled) this.player.applyEffect("CONFUSION", this);
+                }
+                this.whisper("THE WARD NOTICES YOUR CHOICE.", 2.0);
+              }
+            },
+            {
+              label: "Refuse.",
+              hint: "Small sanity gain; the ward gets offended later.",
+              act: () => {
+                this.player.soothe(10);
+                this.tension.triggerX = Math.max(120, this.tension.triggerX - 25);
+                this.whisper("YOU SAID NO. SOMETHING REMEMBERS IT.", 2.0);
+              }
+            },
+            {
+              label: "Steal the chest behind him.",
+              hint: "Risk confusion; chance for Laser.",
+              act: () => {
+                this.spawnPickup(this.player.x + 40, this.world.groundY - 16, chance(0.45) ? "LASER" : "GLITCH");
+                if (chance(0.35)) this.player.applyEffect("CONFUSION", this);
+                this.whisper("THEFT IS ALSO A PRAYER.", 2.0);
+              }
+            }
+          ]
+        });
+
+        this.openDialog(dlg);
+      }
+    }
+
+    openDialog(dlg) {
+      Dialogs.push(dlg);
+      this.state = "dialog";
+      UI.dialog.style.display = "grid";
+
+      UI.dlgTitle.textContent = dlg.title;
+      UI.dlgBody.textContent = dlg.body;
+
+      UI.dlgChoices.innerHTML = "";
+      dlg.choices.forEach((c, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "gBtn";
+        btn.textContent = `${idx + 1}. ${c.label}`;
+        btn.onclick = () => this.pickDialog(idx);
+        const hint = document.createElement("div");
+        hint.className = "gTiny";
+        hint.textContent = c.hint || "";
+        const wrap = document.createElement("div");
+        wrap.appendChild(btn);
+        if (c.hint) wrap.appendChild(hint);
+        UI.dlgChoices.appendChild(wrap);
+      });
+    }
+
+    pickDialog(i) {
+      const dlg = Dialogs.top();
+      if (!dlg) return;
+      const choice = dlg.choices[i];
+      if (choice?.act) choice.act();
+      Dialogs.pop();
+      UI.dialog.style.display = "none";
+      this.state = "play";
+    }
+
+    lose(text, bad = false) {
+      this.state = "end";
+      UI.end.style.display = "grid";
+      UI.endTitle.textContent = bad ? "BAD ENDING" : "SIGNAL LOST";
+      UI.endBody.textContent = text;
+      AudioSys.setIntensity(bad ? 0.95 : 0.6, "frenetic");
+      AudioSys.ping("hit", 1.0);
+    }
+
+    win(text) {
+      this.state = "end";
+      UI.end.style.display = "grid";
+      UI.endTitle.textContent = "RUN COMPLETE";
+      UI.endBody.textContent = text;
+      AudioSys.setIntensity(0.35, "atmosphere");
+      AudioSys.ping("hit", 0.7);
+    }
+
+    startRun({ name, avatar, missionId, allowImages, allowConfusion, hardAudio }) {
+      this.state = "play";
+      this.time = 0;
+
+      // settings
+      ASSETS.allowImages = !!allowImages;
+      Input.confusionEnabled = !!allowConfusion;
+      Input.confusionT = 0;
+      AudioSys.setHard(!!hardAudio);
+
+      // reset
+      this.world.reset();
+      this.atmo = new AtmosphereManager();
+      this.tension = new Tension();
+      this.fx = new VisualFX();
+      this.fx.allowFaces = true;
+
+      this.enemies.length = 0;
+      this.bullets.length = 0;
+      this.particles.length = 0;
+      this.decals.length = 0;
+      this.pickups.length = 0;
+
+      this.player = new Player(name, avatar);
+      this.friend = null;
+
+      this.mission = new Mission(missionId);
+
+      this.daughter = null;
+      this.daughterSpawned = false;
+      this.daughterSaved = false;
+
+      this.spawnAcc = 0;
+      this.lastDilemmaAt = 16;
+      this._mercy = 0;
+
+      this.whisper(`WELCOME, ${name}. THE WARD DOESN'T FORGET NAMES.`, 2.2);
+
+      // early “note” message
+      this.openDialog(new Dialogue({
+        title: "ARCHIVE NOTE",
+        body:
+          avatar === 1
+            ? `${name}, the corridor is a ritual circle.\nYour steps are syllables.\n\nThe ward will test what you protect.`
+            : avatar === 2
+            ? `${name}, the asylum respects force.\nBut it punishes waste.\n\nDo not shoot what you need to save.`
+            : `${name}, a note is pinned to a bin:\n"LIGHT ISN'T SAFETY."\n\nKeep moving. Watch the fog.`,
+        choices: [
+          { label: "Continue.", hint: "The ward resumes breathing.", act: () => {} }
+        ]
+      }));
+    }
+
+    update(dt) {
+      if (this.state !== "play") return;
+
+      this.time += dt;
+      if (this.whisperT > 0) this.whisperT -= dt;
+
+      // camera follows player
+      const target = this.player.x - RW * 0.33;
+      this.world.camx = lerp(this.world.camx, target, 1 - Math.pow(0.00025, dt));
+      this.world.camx = Math.max(0, this.world.camx);
+
+      // atmosphere & tension
+      this.atmo.update(dt, this);
+      this.tension.update(dt, this);
+      AudioSys.setIntensity(this.tension.heat, this.tension.mode);
+
+      // mission
+      this.mission.update(dt, this);
+
+      // spawn daughter
+      this.maybeSpawnDaughter();
+
+      // update props
+      for (const pr of this.world.props) {
+        // props don't move, but keep for extensibility
+      }
+
+      // update player
+      if (Input.wantSwap()) {
+        this.player.swapWeapon();
+        this.whisper(`WEAPON: ${this.player.currentWeapon().name}`, 1.2);
+      }
+      this.player.update(dt, this);
+
+      // friend
+      if (this.player.hasFriend) {
+        if (!this.friend) this.friend = new Companion(this.player);
+        this.friend.update(dt, this);
       } else {
-        this.echoT=0;
+        this.friend = null;
       }
 
-      // decay echoes
-      for(const e of this.echo) e.life -= dt;
-      this.echo = this.echo.filter(e=>e.life>0);
-    }
-
-    post(ctx,g){
-      const w=ctx.canvas.width, h=ctx.canvas.height;
-
-      // wiggle distortion (scanline slice shift) while wiggle serum active
-      const wig = g.player.status.wiggleT;
-      if(wig>0){
-        const temp=this.echoBuf;
-        const tx=this.echoCtx;
-        tx.clearRect(0,0,RW,RH);
-        tx.drawImage(ctx.canvas,0,0);
-
-        ctx.clearRect(0,0,RW,RH);
-        const strength = 2 + (wig/10)*6;
-        for(let y=0;y<h;y+=2){
-          const off = Math.sin((g.time*8)+(y*0.12)) * strength;
-          ctx.drawImage(temp, 0,y,w,2, (off|0),y,w,2);
-        }
-      }
-
-      // echoes
-      if(this.echo.length){
-        ctx.save();
-        ctx.globalCompositeOperation="screen";
-        for(const e of this.echo){
-          ctx.globalAlpha=e.a*(e.life);
-          ctx.drawImage(e.img, e.x, e.y);
-        }
-        ctx.restore();
-      }
-
-      // glitch kick
-      if(this.glitchKick>0){
-        const k=this.glitchKick;
-        const dx=(Math.sin(g.time*40)*2)*k;
-        const dy=(Math.cos(g.time*27)*1)*k;
-        ctx.globalAlpha=0.7;
-        ctx.drawImage(ctx.canvas, dx, dy);
-        ctx.globalAlpha=1;
-      }
-
-      // scanlines
-      ctx.globalAlpha=this.scan;
-      ctx.fillStyle="#000";
-      for(let y=0;y<h;y+=2) ctx.fillRect(0,y,w,1);
-      ctx.globalAlpha=1;
-
-      // noise
-      const dotsN=Math.floor(w*h*(0.008 + this.noise*0.055));
-      ctx.globalAlpha=0.10 + this.noise*0.22;
-      ctx.fillStyle="#fff";
-      for(let i=0;i<dotsN;i++) ctx.fillRect((Math.random()*w)|0,(Math.random()*h)|0,1,1);
-      ctx.globalAlpha=1;
-
-      // vignette
-      ctx.globalAlpha=0.10+this.vign*0.18;
-      ctx.fillStyle="#000";
-      const b=10;
-      ctx.fillRect(0,0,w,b); ctx.fillRect(0,h-b,w,b);
-      ctx.fillRect(0,0,b,h); ctx.fillRect(w-b,0,b,h);
-      ctx.globalAlpha=1;
-
-      // sanity wash
-      const sanity=g.player?(g.player.san/g.player.sanMax):1;
-      const wash=clamp(1-sanity,0,1);
-      if(wash>0.02){
-        ctx.globalAlpha=wash*0.10;
-        ctx.fillStyle=PAL.accent;
-        ctx.fillRect(0,0,w,h);
-        ctx.globalAlpha=1;
-      }
-
-      // grief tint
-      if(g.player.status.griefT>0){
-        ctx.globalAlpha=0.12;
-        ctx.fillStyle=PAL.rust;
-        ctx.fillRect(0,0,w,h);
-        ctx.globalAlpha=1;
-      }
-
-      // face overlay
-      if(this.faceAlpha>0.01){
-        const img=assets.get(this.faceKey);
-        ctx.save();
-        ctx.globalAlpha=this.faceAlpha;
-        if(img){
-          const ox=(Math.sin(g.time*2)*6)|0;
-          const oy=(Math.cos(g.time*1.7)*5)|0;
-          ctx.globalCompositeOperation="screen";
-          ctx.drawImage(img, -12+ox, -12+oy, w+24, h+24);
-          ctx.globalCompositeOperation="source-over";
-        }
-        ctx.restore();
-      }
-    }
-  }
-
-  /*************************
-   * Bosses (kept minimal)
-   *************************/
-  class BossBase extends Entity {
-    constructor(x,y,w,h){
-      super(x,y,w,h);
-      this.maxHp=500; this.hp=500;
-      this.phase=0;
-      this.cool=0.8;
-      this.animT=0;
-      this.name="BOSS";
-      this.dead=false;
-    }
-    hit(dmg,g){
-      this.hp-=dmg;
-      for(let i=0;i<10;i++) g.fx(this.cx,this.cy,"blood",1);
-      if(this.hp<=0){
-        this.dead=true;
-        for(let i=0;i<60;i++) g.fx(this.cx,this.cy, chance(0.6)?"blood":"gib",1);
-        g.addDecal(this.cx, g.world.groundY-1, "blood");
-      }
-    }
-  }
-
-  class BossClinician extends BossBase {
-    constructor(x,g){
-      super(x,g.world.groundY-72,38,72);
-      this.name="SERAPH-CLINICIAN";
-      this.maxHp=520; this.hp=520;
-      this.lines=[];
-    }
-    update(dt,g){
-      this.animT+=dt;
-      this.cool=Math.max(0,this.cool-dt);
-      const dx=g.player.cx-this.cx;
-      this.vx=Math.sign(dx)*(35+g.tension.heat*18);
-
-      this.vy+=g.world.gravity*dt;
-      this.x+=this.vx*dt;
-      this.y+=this.vy*dt;
-      g.world.collide(this);
-
-      this.phase = (this.hp < this.maxHp*0.55) ? 1 : 0;
-
-      if(this.cool<=0){
-        this.cool = this.phase ? 1.25 : 1.65;
-        const x0=this.cx, y0=this.y+18;
-        const x1=g.player.cx+rand(-30,30);
-        const y1=g.player.cy+rand(-14,14);
-        this.lines.push({x0,y0,x1,y1,t:this.phase?1.05:0.90});
-        AudioSys.ping("hit",0.7);
-
-        if(this.phase && chance(0.45)){
-          g.spawnBossBurst(this.cx,this.cy,g.player.cx,g.player.cy,3,0.14,250,7);
-        }
-      }
-      for(const L of this.lines) L.t-=dt;
-      this.lines=this.lines.filter(L=>L.t>0);
-    }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get("boss1");
-      const sp=new Sprite(img,64,64,6,6);
-      sp.draw(ctx,sx-14,sy-10,this.animT,false,1,1,null);
-
-      ctx.globalAlpha=0.85;
-      ctx.strokeStyle=PAL.accent;
-      for(const L of this.lines){
-        ctx.beginPath();
-        ctx.moveTo((L.x0-cam.x)|0,(L.y0-cam.y)|0);
-        ctx.lineTo((L.x1-cam.x)|0,(L.y1-cam.y)|0);
-        ctx.stroke();
-      }
-      ctx.globalAlpha=1;
-    }
-  }
-
-  class BossChoir extends BossBase {
-    constructor(x,g){
-      super(x,g.world.groundY-120,54,44);
-      this.name="CHOIR-ENGINE";
-      this.maxHp=450; this.hp=450;
-      this.wob=rand(0,6.28);
-    }
-    update(dt,g){
-      this.animT+=dt;
-      this.cool=Math.max(0,this.cool-dt);
-
-      const dx=g.player.cx-this.cx;
-      this.x+=Math.sign(dx)*(60+g.tension.heat*30)*dt;
-      this.y=(g.world.groundY-120)+Math.sin(g.time*2+this.wob)*12;
-
-      this.phase=(this.hp<this.maxHp*0.55)?1:0;
-
-      if(this.cool<=0){
-        this.cool=this.phase?0.65:0.95;
-        const mx=Input.mouse.nx*RW + g.world.cam.x;
-        const my=Input.mouse.ny*RH;
-        g.spawnBossBurst(this.cx,this.cy,mx,my,this.phase?4:3,this.phase?0.11:0.14,270,7);
-        if(this.phase && chance(0.35)){
-          g.enemies.push(new Enemy(g.world.cam.x+RW+40, g.world.groundY-randi(70,120), "ANGEL"));
-        }
-        AudioSys.ping("hit",0.6);
-      }
-    }
-    draw(ctx,g){
-      const cam=g.world.cam;
-      const sx=(this.x-cam.x)|0, sy=(this.y-cam.y)|0;
-      const img=assets.get("boss2");
-      const sp=new Sprite(img,72,56,6,7);
-      sp.draw(ctx,sx-14,sy-10,this.animT,false,1,1,null);
-    }
-  }
-
-  /*************************
-   * Game
-   *************************/
-class Game {
-  constructor(){
-    this.state="menu";
-    this.world=new World();
-    this.atmo=new AtmosphereManager();
-    this.tension=new Tension();
-    this.fx=new VisualFX();
-
-    this.player=null;
-    this.friend=null;
-
-    this.enemies=[];
-    this.bullets=[];
-    this.bossBullets=[];
-    this.particles=[];
-    this.decals=[];
-
-    this.props=this.world.props; // alias
-    this.pickups=[];
-    this.child=null;
-
-    this.boss=null;
-
-    this.time=0;
-    this.lastWhisper={text:"", t:0};
-    this._hint="";
-
-    this.flags = { metDilemma:false };
-
-    this.mission=null;
-    this._missionText="";
-  }
-
-  whisper(text,t=2.0){ this.lastWhisper.text=text; this.lastWhisper.t=t; }
-
-  // ✅ main particle spawner (real method)
-  fxSpawn(x,y,kind,n=1){
-    for(let i=0;i<n;i++){
-      this.particles.push(new Particle(x,y,kind));
-    }
-    if(this.particles.length>800) this.particles.splice(0,this.particles.length-800);
-  }
-
-  // ✅ compatibility alias (fixes "g.fx is not a function")
-  fx(x, y, kind, n = 1){
-    this.fxSpawn(x, y, kind, n);
-  }
-
-  addDecal(x,y,type){
-    this.decals.push(new Decal(x,y,type));
-    if(this.decals.length>220) this.decals.splice(0,this.decals.length-220);
-  }
-
-  difficulty(){
-    const d=Math.floor(this.player.x/10);
-    const stage=clamp(d/650,0,1);
-    const struggling = (this.player.hp/this.player.hpMax)<0.35 || (this.player.san/this.player.sanMax)<0.30;
-    const assist = struggling?0.22:0;
-    return {
-      stage,
-      spawnEvery: lerp(1.10,0.62,stage)+assist,
-      maxEnemies: Math.floor(5+stage*5), // 5..10
-      eliteChance: lerp(0.10,0.28,stage),
-    };
-  }
-
-  startRun(name, avi, settings, missionId){
-    this.state="play";
-    this.time=0;
-
-    this.world.reset();
-    this.atmo=new AtmosphereManager();
-    this.tension=new Tension();
-    this.fx=new VisualFX();
-    this.fx.allowFaces=!!settings.allowFaces;
-
-    this.enemies.length=0;
-    this.bullets.length=0;
-    this.bossBullets.length=0;
-    this.particles.length=0;
-    this.decals.length=0;
-    this.pickups.length=0;
-
-    this.player=new Player(name,avi);
-    this.friend=null;
-
-    Input.confusionEnabled=!!settings.allowConfusion;
-    Input.confusionT=0;
-
-    AudioSys.setHard(!!settings.hardAudio);
-
-    // mission
-    const missionName =
-      missionId==="SURVIVE_120" ? "Survive 2:00" :
-      missionId==="SAVE_CHILD" ? "Save Patient 07" :
-      "Reach the Chapel";
-    this.mission=new Mission(missionId, missionName);
-    this.mission.start(this);
-
-    // spawn child depending mission
-    this.child=null;
-    if(missionId==="SAVE_CHILD"){
-      // spawn her early, but slightly ahead
-      this.child = new Patient07(this.world.cam.x + RW + 120);
-      this.whisper("SHE IS SOMEWHERE IN THE WARD.", 2.0);
-    } else {
-      // she may appear later as anxiety
-      this.child=null;
-    }
-
-    // start in “vibrant ward” quicker
-    this.world.thresholdX = 700;
-
-    this.flags.metDilemma=false;
-
-    this.whisper(`WELCOME, ${name}. THE WARD KNOWS YOU.`, 2.2);
-  }
-
-  spawnPickup(x,y,kind){
-    this.pickups.push(new Pickup(x,y,kind));
-  }
-
-  spawnWave(){
-    const diff=this.difficulty();
-    if(this.enemies.length>=diff.maxEnemies) return;
-
-    const room = diff.maxEnemies - this.enemies.length;
-    const count = Math.min(room, randi(1, 2 + Math.floor(diff.stage*1.6)));
-
-    for(let i=0;i<count;i++){
-      const x=this.world.cam.x + RW + randi(20,80);
-      const baseY=this.world.groundY-40;
-
-      let type="ANGEL";
-      const elite = chance(diff.eliteChance);
-      if(elite){
-        // weighted variety
-        const r=Math.random();
-        if(r<0.35) type="FIEND";
-        else if(r<0.60) type="CRAZY";
-        else if(r<0.82) type="WAILER";
-        else type="GOLEM";
-      } else {
-        // common: angels + crazies
-        type = chance(0.65) ? "ANGEL" : "CRAZY";
-      }
-
-      const y = (type==="ANGEL"||type==="WAILER") ? (this.world.groundY - randi(70,130)) : (baseY);
-      this.enemies.push(new Enemy(x,y,type));
-    }
-
-    // occasional helpful drops to keep winnable
-    if(chance(0.10)) this.spawnPickup(this.world.cam.x+RW-randi(30,70), this.world.groundY-16, chance(0.5)?"HP":"SAN");
-  }
-
-  findNearestEnemy(x,y,rad){
-    let best=null, bd=rad;
-    for(const e of this.enemies){
-      const d=Math.hypot(e.cx-x, e.cy-y);
-      if(d<bd){ bd=d; best=e; }
-    }
-    if(this.boss && !this.boss.dead){
-      const d=Math.hypot(this.boss.cx-x, this.boss.cy-y);
-      if(d<bd){ bd=d; best=this.boss; }
-    }
-    return best;
-  }
-
-  fireWeapon(player, ax, ay){
-    const wpn=player.weapon;
-
-    if(wpn.type==="melee"){
-      const range=34;
-      const px=player.cx+player.facing*12;
-      const py=player.cy;
-      for(const e of this.enemies){
-        if(!e.dead && Math.hypot(e.cx-px,e.cy-py)<range) e.hit(wpn.dmg,this);
-      }
-      if(this.boss && !this.boss.dead && Math.hypot(this.boss.cx-px,this.boss.cy-py)<range+18) this.boss.hit(wpn.dmg,this);
-      this.fxSpawn(px,py,"spark",12);
-      AudioSys.ping("thump",0.6);
-      player.san=clamp(player.san-0.2,0,player.sanMax);
-      return;
-    }
-
-    // gun
-    const ox=player.x+(player.facing>0?player.w:0);
-    const oy=player.y+14;
-    const baseAng=Math.atan2(ay-oy, ax-ox);
-    const sp=620;
-
-    const bullets=wpn.bullets||1;
-    const spread=wpn.spread||0;
-    for(let i=0;i<bullets;i++){
-      const ang=baseAng+rand(-spread,spread);
-      const vx=Math.cos(ang)*sp;
-      const vy=Math.sin(ang)*sp;
-      this.bullets.push(new Bullet(ox,oy,vx,vy,wpn.dmg, wpn.pierce||0, "player"));
-    }
-
-    player.san=clamp(player.san-(wpn.sanityCost||0.35),0,player.sanMax);
-    AudioSys.ping("shoot",0.7);
-  }
-
-  fireLaser(player, ax, ay, dt){
-    const ox=player.x+(player.facing>0?player.w:0);
-    const oy=player.y+14;
-    const ang=Math.atan2(ay-oy, ax-ox);
-    const dx=Math.cos(ang), dy=Math.sin(ang);
-
-    const maxLen=320;
-    let hitLen=maxLen;
-
-    const step=6;
-    for(let t=0;t<maxLen;t+=step){
-      const px=ox+dx*t, py=oy+dy*t;
-      if(py>this.world.groundY){ hitLen=t; break; }
-      let blocked=false;
-      for(const o of this.world.obstacles){
-        if(aabb(px,py,2,2,o.x,o.y,o.w,o.h)){ blocked=true; break; }
-      }
-      if(blocked){ hitLen=t; break; }
-    }
-
-    const dmgPerSec = player.weapon.dmg;
-    const dmg = dmgPerSec * dt;
-
-    const beamRadius=7;
-    for(const e of this.enemies){
-      if(e.dead) continue;
-      const ex=e.cx, ey=e.cy;
-      const vx=ex-ox, vy=ey-oy;
-      const proj=vx*dx+vy*dy;
-      if(proj<0||proj>hitLen) continue;
-      const px=ox+dx*proj, py=oy+dy*proj;
-      const dist=Math.hypot(ex-px, ey-py);
-      if(dist<beamRadius){
-        e.hit(dmg*1.25, this);
-      }
-    }
-    if(this.boss && !this.boss.dead){
-      const ex=this.boss.cx, ey=this.boss.cy;
-      const vx=ex-ox, vy=ey-oy;
-      const proj=vx*dx+vy*dy;
-      if(proj>0 && proj<hitLen){
-        const px=ox+dx*proj, py=oy+dy*proj;
-        const dist=Math.hypot(ex-px, ey-py);
-        if(dist<beamRadius+10){
-          this.boss.hit(dmg*1.05, this);
-        }
-      }
-    }
-
-    const cost = (player.weapon.sanityCostPerSec||8.5)*dt;
-    player.san=clamp(player.san-cost,0,player.sanMax);
-
-    this._laser = {x0:ox,y0:oy,x1:ox+dx*hitLen,y1:oy+dy*hitLen, t:0.05};
-    if(chance(0.2)) AudioSys.ping("laser",0.35);
-    this.fxSpawn(ox+dx*(hitLen*0.7), oy+dy*(hitLen*0.7), "spark", 2);
-    this.fxSpawn(ox+dx*(hitLen*0.9), oy+dy*(hitLen*0.9), "spark", 2);
-  }
-
-  spawnBossBurst(x0,y0,x1,y1,count,spread,speed,dmg){
-    const base=Math.atan2(y1-y0,x1-x0);
-    for(let i=0;i<count;i++){
-      const ang=base+rand(-spread,spread);
-      const vx=Math.cos(ang)*speed;
-      const vy=Math.sin(ang)*speed;
-      const b=new Bullet(x0,y0,vx,vy,dmg,0,"boss");
-      b.w=5; b.h=5;
-      this.bossBullets.push(b);
-    }
-  }
-
-  startBoss(index){
-    this.bullets.length=0;
-    this.bossBullets.length=0;
-    this.boss = index===0 ? new BossClinician(this.world.cam.x+RW+90,this) : new BossChoir(this.world.cam.x+RW+90,this);
-    this.whisper(`${this.boss.name} ARRIVES.`,2.2);
-    AudioSys.ping("hit",1.0);
-  }
-
-  moralDilemma(){
-    if(this.flags.metDilemma) return;
-    this.flags.metDilemma=true;
-
-    const p=this.player;
-    const name=p.name;
-    const tone = (p.avi===1) ? "ritual" : (p.avi===2 ? "brutal" : "flat");
-
-    const body =
-      tone==="ritual"
-        ? `${name}, the nurse offers a vial. She says it’s “memory.”\nHer hands shake like a metronome.\n\nDo you take it?`
-        : tone==="brutal"
-        ? `${name}, a patient blocks the hall with a bin.\nHe begs you to “make it quiet.”\n\nDo you help or push past?`
-        : `${name}, a nurse stands still.\nShe offers a potion and refuses to blink.\n\nDo you drink it?`;
-
-    SceneStack.push(new DialogueScene({
-      title:"WARD ENCOUNTER",
-      sub:"Moral pressure (it changes what happens later).",
-      body,
-      choices:[
-        {label:"Take it.", hint:"Gain Memory Tincture; +Grief risk later", onPick:()=>{
-          this.spawnPickup(p.x+40,p.y,"MEMORY");
-          p.status.griefT = Math.max(p.status.griefT, 0.8);
-          this.whisper("YOU ACCEPTED SOMETHING THAT ACCEPTS YOU BACK.",2.0);
-        }},
-        {label:"Refuse.", hint:"Small sanity gain; ward becomes angrier", onPick:()=>{
-          p.soothe(10);
-          this.whisper("YOU SAID NO. THE WARD TAKES IT AS A GAME.",2.0);
-          this.tension.spawnT = Math.min(this.tension.spawnT, 0.4);
-        }},
-        {label:"Steal the friend-contract.", hint:"Chance to unlock FRIEND", onPick:()=>{
-          if(chance(0.55)){
-            p.applySubstance("FRIEND", this);
-          } else {
-            p.status.slowT = Math.max(p.status.slowT, 1.2);
-            this.whisper("IT SLIPS AWAY. YOUR LEGS FORGET TO OBEY.",2.0);
+      // daughter
+      if (this.daughter) {
+        this.daughter.update(dt, this);
+
+        // interact to save
+        if (Input.wantInteract() && !this.daughter.saved) {
+          if (aabb(this.player.x, this.player.y, this.player.w, this.player.h, this.daughter.x, this.daughter.y, this.daughter.w, this.daughter.h)) {
+            this.daughter.saved = true;
+            this.daughterSaved = true;
+            this.player.soothe(18);
+            this.fx.triggerPaletteShift(1.5);
+            this.whisper("SHE IS REAL ENOUGH TO HOLD.", 2.0);
           }
-        }},
-      ]
-    }));
-  }
-
-  update(dt){
-    if(this.state!=="play") return;
-
-    this.time += dt;
-    if(this.lastWhisper.t>0) this.lastWhisper.t-=dt;
-    Input.confusionT = Math.max(0, Input.confusionT-dt);
-
-    const targetX=this.player.x - RW*0.33;
-    this.world.cam.x = lerp(this.world.cam.x, targetX, 1-Math.pow(0.00025,dt));
-    this.world.cam.x = Math.max(0,this.world.cam.x);
-
-    this.atmo.update(dt,this);
-    this.tension.update(dt,this);
-    AudioSys.setIntensity(this.tension.heat, this.tension.mode);
-
-    this.mission?.update(dt,this);
-
-    if(this.atmo.name==="WARD" && !this.flags.metDilemma && Math.floor(this.player.x/10)>210){
-      if(chance(0.012)) this.moralDilemma();
-    }
-
-    for(const pr of this.world.props) pr.update(dt,this);
-
-    this.player.update(dt,this);
-
-    if(this.player.hasFriend){
-      if(!this.friend) this.friend=new Companion(this.player);
-      this.friend.update(dt,this);
-    } else {
-      this.friend=null;
-    }
-
-    if(!this.child && (!this.mission || this.mission.id!=="SAVE_CHILD")){
-      if(this.tension.mode==="frenetic" && Math.floor(this.player.x/10)>180 && chance(0.004)){
-        this.child=new Patient07(this.world.cam.x+RW-randi(60,120));
-        this.whisper("PATIENT 07 ENTERS THE HALL.", 2.0);
-        AudioSys.ping("thump",0.9);
+        }
       }
-    }
-    if(this.child) this.child.update(dt,this);
 
-    if(this.tension.mode==="frenetic" && !this.boss){
-      if(this.mission && this.mission.id==="SURVIVE_120" && chance(0.01)){
-        if(this.enemies.length < this.difficulty().maxEnemies) this.spawnWave();
+      // spawn enemies based on tension
+      this.spawnAcc += dt;
+      const d = this.difficulty();
+
+      // In atmosphere mode: almost no enemies (exploration)
+      // In frenetic mode: spawns
+      const doSpawn = (this.tension.mode === "frenetic");
+
+      if (doSpawn && this.spawnAcc > d.spawnEvery) {
+        this.spawnAcc = 0;
+        this.spawnEnemyWave();
       }
-    }
 
-    for(const e of this.enemies) e.update(dt,this);
-    this.enemies = this.enemies.filter(e=>!e.dead);
+      // update enemies
+      for (const e of this.enemies) e.update(dt, this);
+      this.enemies = this.enemies.filter(e => !e.dead);
 
-    if(this.boss){
-      this.boss.update(dt,this);
-      if(this.boss.dead){
-        this.boss=null;
-        this.tension.mode="frenetic";
-        this.whisper("THE ROOM EXHALES.",2.0);
-        this.spawnPickup(this.world.cam.x+RW-60, this.world.groundY-16, "HP");
-        this.spawnPickup(this.world.cam.x+RW-40, this.world.groundY-16, "SAN");
+      // bullets
+      for (const b of this.bullets) b.update(dt, this);
+      this.bullets = this.bullets.filter(b => !b.dead);
+
+      // pickups
+      for (const p of this.pickups) p.update(dt, this);
+      this.pickups = this.pickups.filter(p => !p.dead);
+
+      // particles/decals
+      for (const p of this.particles) p.update(dt);
+      this.particles = this.particles.filter(p => p.life > 0);
+      for (const dcl of this.decals) dcl.update(dt);
+
+      // resolve bullet hits vs enemies/props/daughter
+      this.resolveCombat();
+
+      // occasional dilemma/lore
+      this.triggerDilemmaOnce();
+
+      // loss checks
+      if (this.player.hp <= 0) {
+        this.lose("Your body gives up.\n\nThe ward keeps walking.\nIt steps over you like a thought.", false);
+      }
+      if (this.player.san <= 0) {
+        this.lose("Your mind fractures.\n\nThe fog learns your face.\nIt wears it.", false);
+      }
+
+      // update FX timers
+      this.fx.update(dt);
+
+      // degrade effects by status
+      if (this.player.status.wiggleT > 0) this.fx.triggerWiggle(0.2);
+      if (this.player.status.memoryT > 0) this.fx.triggerMemory(0.2);
+
+      // small random face flashes under high tension
+      if (this.tension.mode === "frenetic" && chance(0.003)) {
+        this.fx.triggerFace(ASSETS.get("assets/face2.png"), 0.15);
       }
     }
 
-    for(const b of this.bullets) b.update(dt,this);
-    for(const b of this.bossBullets) b.update(dt,this);
-    this.bullets = this.bullets.filter(b=>!b.dead);
-    this.bossBullets = this.bossBullets.filter(b=>!b.dead);
+    resolveCombat() {
+      // bullets hit props first
+      for (const b of this.bullets) {
+        if (b.dead) continue;
 
-    for(const p of this.pickups) p.update(dt,this);
-    this.pickups = this.pickups.filter(p=>!p.dead);
+        // props
+        for (const pr of this.world.props) {
+          if (pr.broken) continue;
+          const box = pr.aabb();
+          if (aabb(b.x, b.y, b.w, b.h, box.x, box.y, box.w, box.h)) {
+            b.dead = true;
+            const drop = pr.hit(this, "bullet");
+            if (drop) this.spawnPickup(pr.x + pr.w / 2, this.world.groundY - 16, drop);
+            this.spawnParticle(b.x, b.y, "spark");
+            break;
+          }
+        }
+        if (b.dead) continue;
 
-    for(const p of this.particles) p.update(dt,this);
-    this.particles = this.particles.filter(p=>p.life>0);
+        // daughter = instant bad ending (if not saved)
+        if (this.daughter && !this.daughter.saved) {
+          if (aabb(b.x, b.y, b.w, b.h, this.daughter.x, this.daughter.y, this.daughter.w, this.daughter.h)) {
+            b.dead = true;
+            for (let i = 0; i < 46; i++) this.spawnParticle(this.daughter.cx, this.daughter.cy, chance(0.6) ? "blood" : "gib");
+            this.addDecal(this.daughter.cx, this.world.groundY - 1, "blood");
+            this.lose("YOU SHOT THE DAUGHTER.\n\nBad Ending:\nThe ward stops pretending you were a person.", true);
+            return;
+          }
+        }
 
-    this._hint="";
-    if(Input.interact()){
-      if(this.child && aabb(this.child.x,this.child.y,this.child.w,this.child.h, this.player.x,this.player.y,this.player.w,this.player.h)){
-        if(!this.child.saved){
-          this.whisper("YOU FEEL HOW LIGHT SHE IS.", 1.6);
-          this.player.soothe(6);
+        // enemies
+        for (const e of this.enemies) {
+          if (e.dead) continue;
+          if (aabb(b.x, b.y, b.w, b.h, e.x, e.y, e.w, e.h)) {
+            b.dead = true;
+            e.hit(b.dmg, this);
+            break;
+          }
         }
       }
     }
 
-    this.resolveCombat();
+    draw() {
+      // palette
+      this.pal = this.atmo.palette();
 
-    const st=[];
-    if(Input.confusionEnabled && Input.confusionT>0) st.push("CONFUSION");
-    if(this.player.status.slowT>0) st.push("SLOWED");
-    if(this.player.status.griefT>0) st.push("GRIEF");
-    if(this.player.status.wiggleT>0) st.push("WIGGLE");
-    if(this.player.status.memoryT>0) st.push("MEMORY");
-    if(this.player.hasFriend) st.push(this.player.friendBoostT>0?"FRIEND:BOOST":"FRIEND");
-    this._statusText = st.join(" · ");
+      // background
+      this.world.drawBackground(bctx, this.pal, this.time);
 
-    if(this.player.hp<=0) this.lose("PHYSICAL VESSEL DESTROYED\n\nThe ward keeps walking without you.");
-    if(this.player.san<=0) this.lose("MIND FRACTURED\n\nThe fog learns your face and wears it.");
-  }
+      // decals
+      for (const d of this.decals) d.draw(bctx, this.world.camx);
 
-  resolveCombat(){
-    for(const b of this.bullets){
-      if(b.dead) continue;
+      // solids/obstacles
+      this.world.drawSolids(bctx, this.pal);
 
-      for(const pr of this.world.props){
-        if(pr.broken) continue;
-        const box=pr.aabb();
-        if(aabb(b.x,b.y,b.w,b.h, box.x,box.y,box.w,box.h)){
-          b.dead=true;
-          const drop=pr.hit(this,"bullet");
-          if(drop==="WIGGLE") this.spawnPickup(pr.x,pr.y,"WIGGLE");
-          if(drop==="MEMORY") this.spawnPickup(pr.x,pr.y,"MEMORY");
-          this.fxSpawn(b.x,b.y,"spark",6);
-          break;
-        }
-      }
-      if(b.dead) continue;
+      // props
+      for (const pr of this.world.props) pr.draw(bctx, this.world.camx, this.pal, this.time);
 
-      if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
-        b.dead=true;
-        for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
-        this.addDecal(this.child.cx, this.world.groundY-1, "blood");
-        this.lose("YOU SHOT PATIENT 07.\n\nBad Ending:\nThe ward stops pretending it needs you.", true);
-        return;
-      }
+      // pickups
+      for (const p of this.pickups) p.draw(bctx, this.world.camx, this.pal);
 
-      for(const e of this.enemies){
-        if(e.dead) continue;
-        if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
-          if(b.hit.has(e)) continue;
-          b.hit.add(e);
-          e.hit(b.dmg,this);
-          if(b.pierce>0) b.pierce--;
-          else b.dead=true;
-          break;
-        }
+      // daughter
+      if (this.daughter) this.daughter.draw(bctx, this.world.camx, this.pal);
+
+      // enemies
+      for (const e of this.enemies) e.draw(bctx, this.world.camx, this.pal);
+
+      // bullets
+      for (const b of this.bullets) b.draw(bctx, this.world.camx, this.pal);
+
+      // friend
+      if (this.friend) this.friend.draw(bctx, this.world.camx, this.pal);
+
+      // player
+      if (this.player) this.player.draw(bctx, this.world.camx, this.pal);
+
+      // laser beam overlay
+      if (this._laser && this._laser.t > 0) {
+        this._laser.t -= 1 / 60;
+        bctx.globalAlpha = 0.85;
+        bctx.strokeStyle = this.pal.accent;
+        bctx.beginPath();
+        bctx.moveTo((this._laser.x0 - this.world.camx) | 0, this._laser.y0 | 0);
+        bctx.lineTo((this._laser.x1 - this.world.camx) | 0, this._laser.y1 | 0);
+        bctx.stroke();
+        bctx.globalAlpha = 1;
       }
 
-      if(this.boss && !this.boss.dead && aabb(b.x,b.y,b.w,b.h, this.boss.x,this.boss.y,this.boss.w,this.boss.h)){
-        this.boss.hit(b.dmg,this);
-        b.dead=true;
+      // lighting / fog mask (lantern)
+      if (this.player) {
+        const px = (this.player.cx - this.world.camx) | 0;
+        const py = (this.player.cy) | 0;
+        const rad = this.player.lantern;
+
+        const fog = bctx.createRadialGradient(px, py, rad * 0.2, px, py, rad * 1.55);
+        fog.addColorStop(0, "rgba(0,0,0,0)");
+        fog.addColorStop(0.55, "rgba(0,0,0,0.48)");
+        fog.addColorStop(1, this.pal.fog);
+        bctx.fillStyle = fog;
+        bctx.fillRect(0, 0, RW, RH);
       }
+
+      // particles
+      for (const p of this.particles) p.draw(bctx, this.world.camx);
+
+      // whisper / UI text
+      if (this.whisperT > 0) {
+        bctx.globalAlpha = clamp(this.whisperT / 2, 0, 1) * 0.9;
+        bctx.fillStyle = this.pal.ui;
+        bctx.font = "10px ui-monospace, monospace";
+        bctx.fillText(this.whisperText, 8, RH - 10);
+        bctx.globalAlpha = 1;
+      }
+
+      // crosshair
+      if (this.state === "play") {
+        const mx = clamp(Input.mouse.x, 0, RW) | 0;
+        const my = clamp(Input.mouse.y, 0, RH) | 0;
+        bctx.globalAlpha = 0.85;
+        bctx.strokeStyle = "#999";
+        bctx.beginPath();
+        bctx.moveTo(mx - 4, my); bctx.lineTo(mx - 1, my);
+        bctx.moveTo(mx + 1, my); bctx.lineTo(mx + 4, my);
+        bctx.moveTo(mx, my - 4); bctx.lineTo(mx, my - 1);
+        bctx.moveTo(mx, my + 1); bctx.lineTo(mx, my + 4);
+        bctx.stroke();
+        bctx.globalAlpha = 1;
+      }
+
+      // post FX
+      this.fx.postProcess(bctx, this);
+
+      // blit to screen
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(buf, 0, 0, RW, RH, DX, DY, RW * SCALE, RH * SCALE);
+
+      // HUD update
+      this.updateHud();
     }
 
-    for(const b of this.bossBullets){
-      if(b.dead) continue;
-      if(aabb(b.x,b.y,b.w,b.h, this.player.x,this.player.y,this.player.w,this.player.h)){
-        b.dead=true;
-        this.player.hurt(7, b.x);
-        for(let i=0;i<10;i++) this.fxSpawn(this.player.cx,this.player.cy,"blood",1);
-        AudioSys.ping("hit",0.9);
+    updateHud() {
+      if (!this.player) return;
+
+      UI.uiHp.style.width = `${clamp((this.player.hp / this.player.hpMax) * 100, 0, 100)}%`;
+      UI.uiSan.style.width = `${clamp((this.player.san / this.player.sanMax) * 100, 0, 100)}%`;
+
+      const st = [];
+      if (Input.confusionT > 0) st.push("CONFUSION");
+      if (this.player.status.slowT > 0) st.push("SLOW");
+      if (this.player.status.griefT > 0) st.push("GRIEF");
+      if (this.player.status.wiggleT > 0) st.push("WIGGLE");
+      if (this.player.status.memoryT > 0) st.push("MEMORY");
+      if (this.player.hasFriend) st.push(this.player.friendBoostT > 0 ? "FRIEND+" : "FRIEND");
+      st.push(this.player.currentWeapon().id);
+
+      UI.uiStatus.textContent = st.join(" · ");
+
+      UI.uiMission.textContent = this.mission?.title() || "";
+      if (this.mission?.id === "SURVIVE_120") {
+        const t = Math.ceil(this.mission.timeLeft);
+        const mm = String(Math.floor(t / 60)).padStart(1, "0");
+        const ss = String(t % 60).padStart(2, "0");
+        UI.uiTimer.textContent = `TIME: ${mm}:${ss}`;
+      } else {
+        UI.uiTimer.textContent = `DEPTH: ${(this.player.x / 10) | 0}m`;
       }
-      if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
-        b.dead=true;
-        for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
-        this.addDecal(this.child.cx, this.world.groundY-1, "blood");
-        this.lose("THE SONG TOUCHED PATIENT 07.\n\nBad Ending:\nYou didn’t pull the trigger — the ward still blames you.", true);
-        return;
-      }
+
+      UI.uiMode.textContent = (this.tension.mode === "frenetic") ? "FRENETIC" : "ATMOSPHERE";
     }
   }
 
-  lose(text, bad=false){
-    this.state="end";
-    UI.end.classList.remove("hidden");
-    UI.endTitle.textContent = bad ? "BAD ENDING" : "SIGNAL LOST";
-    UI.endBody.textContent = text;
-    UI.hud.classList.add("hidden");
-    AudioSys.setIntensity(bad?0.95:0.55,"boss");
-    AudioSys.ping("hit",1.0);
-  }
-
-  win(text){
-    this.state="end";
-    UI.end.classList.remove("hidden");
-    UI.endTitle.textContent = "RUN COMPLETE";
-    UI.endBody.textContent = text;
-    UI.hud.classList.add("hidden");
-    AudioSys.setIntensity(0.35,"atmosphere");
-    AudioSys.ping("thump",0.9);
-  }
-
-  draw(){
-    const t=this.time;
-
-    this.world.draw(bctx,t,this.atmo,this.decals);
-
-    for(const pr of this.world.props) pr.draw(bctx,this);
-
-    for(const p of this.pickups) p.draw(bctx,this);
-
-    if(this.child) this.child.draw(bctx,this);
-    for(const e of this.enemies) e.draw(bctx,this);
-    if(this.boss) this.boss.draw(bctx,this);
-    for(const b of this.bossBullets) b.draw(bctx,this.world.cam);
-    for(const b of this.bullets) b.draw(bctx,this.world.cam);
-
-    if(this.friend) this.friend.draw(bctx,this);
-    if(this.player) this.player.draw(bctx,this);
-
-    for(const p of this.particles) p.draw(bctx,this.world.cam);
-
-    if(this._laser && this._laser.t>0){
-      this._laser.t -= 1/60;
-      const cam=this.world.cam;
-      bctx.globalAlpha=0.8;
-      bctx.strokeStyle=PAL.potion;
-      bctx.beginPath();
-      bctx.moveTo((this._laser.x0-cam.x)|0,(this._laser.y0-cam.y)|0);
-      bctx.lineTo((this._laser.x1-cam.x)|0,(this._laser.y1-cam.y)|0);
-      bctx.stroke();
-      bctx.globalAlpha=1;
-    }
-
-    this.drawLighting(bctx);
-    this.drawOverlayText(bctx);
-
-    this.fx.update(1/60,this);
-    this.fx.post(bctx,this);
-
-    ctx.fillStyle="#000";
-    ctx.fillRect(0,0,W,H);
-    const scale=Math.max(1,Math.floor(Math.min(W/RW,H/RH)));
-    const dw=RW*scale, dh=RH*scale;
-    const dx=((W-dw)/2)|0, dy=((H-dh)/2)|0;
-    ctx.drawImage(buf,0,0,RW,RH,dx,dy,dw,dh);
-  }
-
-  drawLighting(ctx){
-    const p=this.player;
-    if(!p) return;
-
-    const fogMult=this.atmo?this.atmo.fogMult:1.0;
-    const px=(p.x-this.world.cam.x+p.w/2)|0;
-    const py=(p.y+p.h/2)|0;
-    const rad=p.lantern;
-
-    const fog=ctx.createRadialGradient(px,py,rad*0.2,px,py,rad*1.65*fogMult);
-    fog.addColorStop(0,"rgba(0,0,0,0)");
-    fog.addColorStop(0.55,"rgba(0,0,0,0.45)");
-    fog.addColorStop(1,"rgba(0,0,0,0.98)");
-    ctx.fillStyle=fog;
-    ctx.fillRect(0,0,RW,RH);
-
-    ctx.globalCompositeOperation="screen";
-    ctx.globalAlpha=(0.12+this.tension.heat*0.15)*fogMult;
-    ctx.fillStyle="#111";
-    for(let i=0;i<10;i++){
-      const mx=((performance.now()/50+i*210)%(RW+420))-210;
-      ctx.fillRect(mx,0,90,RH);
-    }
-    ctx.globalAlpha=1;
-    ctx.globalCompositeOperation="source-over";
-  }
-
-  drawOverlayText(ctx){
-    const mx=(Input.mouse.nx*RW)|0;
-    const my=(Input.mouse.ny*RH)|0;
-    ctx.globalAlpha=0.85;
-    ctx.strokeStyle="#888";
-    ctx.beginPath();
-    ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
-    ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
-    ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
-    ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
-    ctx.stroke();
-    ctx.globalAlpha=1;
-
-    if(this.lastWhisper.t>0){
-      ctx.font="10px ui-monospace, monospace";
-      ctx.fillStyle="#9a9aaa";
-      ctx.globalAlpha=clamp(this.lastWhisper.t/2,0,1)*0.9;
-      ctx.fillText(this.lastWhisper.text, 8, RH-10);
-      ctx.globalAlpha=1;
-    }
-  }
-}
-
-
-  /*************************
-   * Boot + UI wiring
-   *************************/
   const game = new Game();
 
-  function setAviSelection(idx){
-    document.querySelectorAll(".avi").forEach(b=>b.classList.remove("sel"));
-    const btn=document.querySelector(`.avi[data-avi="${idx}"]`);
-    btn?.classList.add("sel");
-  }
-  let selectedAvi=0;
-  document.querySelectorAll(".avi").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      selectedAvi=parseInt(btn.dataset.avi,10)||0;
-      setAviSelection(selectedAvi);
-    });
-  });
-  setAviSelection(0);
+  /********************************************************************
+   * Loop
+   ********************************************************************/
+  let last = performance.now();
+  function loop(t) {
+    const dt = Math.min(0.033, (t - last) / 1000);
+    last = t;
 
-  UI.loadSpritesBtn.addEventListener("click", ()=>UI.spriteFiles.click());
-  UI.spriteFiles.addEventListener("change", async ()=>{
-    await assets.loadFromFiles(UI.spriteFiles.files);
-    updateAssetUI();
-  });
-
-  UI.startBtn.addEventListener("click", async ()=>{
-    const name=(UI.nameInput.value||"SEEKER").trim().slice(0,18)||"SEEKER";
-    UI.nameInput.value=name;
-
-    await assets.tryLoadManifest(); // optional
-    updateAssetUI();
-
-    AudioSys.start();
-    AudioSys.setHard(UI.toggleHardAudio.checked);
-
-    const settings={
-      allowConfusion:UI.toggleConfusion.checked,
-      allowFaces:UI.toggleFaces.checked,
-      hardAudio:UI.toggleHardAudio.checked
-    };
-    const missionId = UI.missionSelect.value || "SURVIVE_120";
-
-    UI.menu.classList.add("hidden");
-    UI.end.classList.add("hidden");
-    UI.hud.classList.remove("hidden");
-
-    game.startRun(name, selectedAvi, settings, missionId);
-
-    SceneStack.stack.length=0;
-    SceneStack.push(game);
-  });
-
-  UI.retryBtn.addEventListener("click", ()=>{
-    UI.end.classList.add("hidden");
-    UI.hud.classList.remove("hidden");
-
-    const name=(game.player?.name||UI.nameInput.value||"SEEKER").trim().slice(0,18)||"SEEKER";
-    const settings={
-      allowConfusion:UI.toggleConfusion.checked,
-      allowFaces:UI.toggleFaces.checked,
-      hardAudio:UI.toggleHardAudio.checked
-    };
-    const missionId = UI.missionSelect.value || "SURVIVE_120";
-
-    game.startRun(name, game.player?.avi ?? selectedAvi, settings, missionId);
-    SceneStack.stack.length=0;
-    SceneStack.push(game);
-  });
-
-  UI.menuBtn.addEventListener("click", ()=>{
-    UI.end.classList.add("hidden");
-    UI.hud.classList.add("hidden");
-    UI.menu.classList.remove("hidden");
-    SceneStack.stack.length=0;
-    game.state="menu";
-  });
-
-  /*************************
-   * Main Loop (single update; no double tick)
-   *************************/
-  let last=performance.now();
-  function loop(now){
-    const dt=Math.min((now-last)/1000, 0.05);
-    last=now;
-
-    const top=SceneStack.top();
-    if(top){
-      if(top!==game && top.pausesGame) top.update?.(dt);
-      else game.update(dt);
-
-      game.draw();
-
-      // HUD
-      if(game.player && game.state==="play"){
-        const p=game.player;
-        UI.hpFill.style.width = `${(p.hp/p.hpMax*100)|0}%`;
-        UI.sanFill.style.width = `${(p.san/p.sanMax*100)|0}%`;
-        UI.weaponLabel.textContent = `Weapon: ${p.weapon.name}`;
-        UI.depthLabel.textContent = `DEPTH: ${Math.floor(p.x/10)}m`;
-        UI.modeLabel.textContent =
-          game.tension.mode==="atmosphere" ? "ATMOSPHERE" :
-          game.tension.mode==="boss" ? "BOSS" : "FRENETIC";
-        UI.zoneLabel.textContent = `ZONE: ${game.atmo?.name||"—"}`;
-
-        // objective
-        let obj="—";
-        if(game.mission){
-          if(game.mission.id==="SURVIVE_120") obj = `Objective: Survive ${Math.ceil(game.mission.timer)}s`;
-          if(game.mission.id==="SAVE_CHILD") obj = `Objective: Touch Patient 07`;
-          if(game.mission.id==="REACH_CHAPEL") obj = `Objective: Reach 1000m`;
-        }
-        UI.objectiveLabel.textContent = obj;
-
-        UI.statusLabel.textContent = game._statusText || "";
-        UI.hintLabel.textContent = "";
-      }
+    // Dialog shortcuts
+    if (game.state === "dialog" && Dialogs.active) {
+      if (Input._justPressed("Space")) game.pickDialog(0);
     }
+
+    game.update(dt);
+    game.draw();
 
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
 
-})();
+  /********************************************************************
+   * UI wiring
+   ********************************************************************/
+  UI.btnRestart.onclick = () => location.reload();
 
+  UI.btnMute.onclick = async () => {
+    await AudioSys.init();
+    AudioSys.setMuted(!AudioSys.muted);
+    UI.btnMute.textContent = AudioSys.muted ? "AUDIO: OFF" : "AUDIO: ON";
+  };
+
+  UI.btnStart.onclick = async () => {
+    await AudioSys.init();
+
+    // load optional assets (non-blocking but quick)
+    ASSETS.allowImages = !!UI.optImages.checked;
+    await ASSETS.loadList(OPTIONAL_ASSET_LIST);
+
+    // start
+    UI.menu.style.display = "none";
+    UI.end.style.display = "none";
+    UI.dialog.style.display = "none";
+
+    game.startRun({
+      name: (UI.inName.value || "SEEKER").trim().slice(0, 14),
+      avatar: UI.getSelectedAvatar(),
+      missionId: UI.inMission.value,
+      allowImages: UI.optImages.checked,
+      allowConfusion: UI.optConfusion.checked,
+      hardAudio: UI.optHardAudio.checked
+    });
+
+    // turn audio on automatically once user starts (browser gesture)
+    AudioSys.setMuted(false);
+    UI.btnMute.textContent = "AUDIO: ON";
+  };
+
+  // prevent stuck black screen if user never clicks anything:
+  // we still render menu overlay + background
+  game.pal = PALETTES.ward;
+
+})();
 
