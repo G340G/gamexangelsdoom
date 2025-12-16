@@ -2088,644 +2088,605 @@
   /*************************
    * Game
    *************************/
-  class Game {
-    constructor(){
-      this.state="menu";
-      this.world=new World();
-      this.atmo=new AtmosphereManager();
-      this.tension=new Tension();
-      this.fx=new VisualFX();
+class Game {
+  constructor(){
+    this.state="menu";
+    this.world=new World();
+    this.atmo=new AtmosphereManager();
+    this.tension=new Tension();
+    this.fx=new VisualFX();
 
-      this.player=null;
-      this.friend=null;
+    this.player=null;
+    this.friend=null;
 
-      this.enemies=[];
-      this.bullets=[];
-      this.bossBullets=[];
-      this.particles=[];
-      this.decals=[];
+    this.enemies=[];
+    this.bullets=[];
+    this.bossBullets=[];
+    this.particles=[];
+    this.decals=[];
 
-      this.props=this.world.props; // alias
-      this.pickups=[];
+    this.props=this.world.props; // alias
+    this.pickups=[];
+    this.child=null;
+
+    this.boss=null;
+
+    this.time=0;
+    this.lastWhisper={text:"", t:0};
+    this._hint="";
+
+    this.flags = { metDilemma:false };
+
+    this.mission=null;
+    this._missionText="";
+  }
+
+  whisper(text,t=2.0){ this.lastWhisper.text=text; this.lastWhisper.t=t; }
+
+  // ✅ main particle spawner (real method)
+  fxSpawn(x,y,kind,n=1){
+    for(let i=0;i<n;i++){
+      this.particles.push(new Particle(x,y,kind));
+    }
+    if(this.particles.length>800) this.particles.splice(0,this.particles.length-800);
+  }
+
+  // ✅ compatibility alias (fixes "g.fx is not a function")
+  fx(x, y, kind, n = 1){
+    this.fxSpawn(x, y, kind, n);
+  }
+
+  addDecal(x,y,type){
+    this.decals.push(new Decal(x,y,type));
+    if(this.decals.length>220) this.decals.splice(0,this.decals.length-220);
+  }
+
+  difficulty(){
+    const d=Math.floor(this.player.x/10);
+    const stage=clamp(d/650,0,1);
+    const struggling = (this.player.hp/this.player.hpMax)<0.35 || (this.player.san/this.player.sanMax)<0.30;
+    const assist = struggling?0.22:0;
+    return {
+      stage,
+      spawnEvery: lerp(1.10,0.62,stage)+assist,
+      maxEnemies: Math.floor(5+stage*5), // 5..10
+      eliteChance: lerp(0.10,0.28,stage),
+    };
+  }
+
+  startRun(name, avi, settings, missionId){
+    this.state="play";
+    this.time=0;
+
+    this.world.reset();
+    this.atmo=new AtmosphereManager();
+    this.tension=new Tension();
+    this.fx=new VisualFX();
+    this.fx.allowFaces=!!settings.allowFaces;
+
+    this.enemies.length=0;
+    this.bullets.length=0;
+    this.bossBullets.length=0;
+    this.particles.length=0;
+    this.decals.length=0;
+    this.pickups.length=0;
+
+    this.player=new Player(name,avi);
+    this.friend=null;
+
+    Input.confusionEnabled=!!settings.allowConfusion;
+    Input.confusionT=0;
+
+    AudioSys.setHard(!!settings.hardAudio);
+
+    // mission
+    const missionName =
+      missionId==="SURVIVE_120" ? "Survive 2:00" :
+      missionId==="SAVE_CHILD" ? "Save Patient 07" :
+      "Reach the Chapel";
+    this.mission=new Mission(missionId, missionName);
+    this.mission.start(this);
+
+    // spawn child depending mission
+    this.child=null;
+    if(missionId==="SAVE_CHILD"){
+      // spawn her early, but slightly ahead
+      this.child = new Patient07(this.world.cam.x + RW + 120);
+      this.whisper("SHE IS SOMEWHERE IN THE WARD.", 2.0);
+    } else {
+      // she may appear later as anxiety
       this.child=null;
-
-      this.boss=null;
-
-      this.time=0;
-      this.lastWhisper={text:"", t:0};
-      this._hint="";
-
-      this.flags = { metDilemma:false };
-
-      this.mission=null;
-      this._missionText="";
     }
 
-    whisper(text,t=2.0){ this.lastWhisper.text=text; this.lastWhisper.t=t; }
+    // start in “vibrant ward” quicker
+    this.world.thresholdX = 700;
 
-    fxSpawn(x,y,kind,n=1){
-      for(let i=0;i<n;i++){
-        this.particles.push(new Particle(x,y,kind));
-      }
-      if(this.particles.length>800) this.particles.splice(0,this.particles.length-800);
-    }
-    fx(x, y, kind, n = 1) {
-      this.fxSpawn(x, y, kind, n);
-    }
-     
-    addDecal(x,y,type){
-      this.decals.push(new Decal(x,y,type));
-      if(this.decals.length>220) this.decals.splice(0,this.decals.length-220);
-    }
+    this.flags.metDilemma=false;
 
-    difficulty(){
-      const d=Math.floor(this.player.x/10);
-      const stage=clamp(d/650,0,1);
-      const struggling = (this.player.hp/this.player.hpMax)<0.35 || (this.player.san/this.player.sanMax)<0.30;
-      const assist = struggling?0.22:0;
-      return {
-        stage,
-        spawnEvery: lerp(1.10,0.62,stage)+assist,
-        maxEnemies: Math.floor(5+stage*5), // 5..10
-        eliteChance: lerp(0.10,0.28,stage),
-      };
-    }
+    this.whisper(`WELCOME, ${name}. THE WARD KNOWS YOU.`, 2.2);
+  }
 
-    startRun(name, avi, settings, missionId){
-      this.state="play";
-      this.time=0;
+  spawnPickup(x,y,kind){
+    this.pickups.push(new Pickup(x,y,kind));
+  }
 
-      this.world.reset();
-      this.atmo=new AtmosphereManager();
-      this.tension=new Tension();
-      this.fx=new VisualFX();
-      this.fx.allowFaces=!!settings.allowFaces;
+  spawnWave(){
+    const diff=this.difficulty();
+    if(this.enemies.length>=diff.maxEnemies) return;
 
-      this.enemies.length=0;
-      this.bullets.length=0;
-      this.bossBullets.length=0;
-      this.particles.length=0;
-      this.decals.length=0;
-      this.pickups.length=0;
+    const room = diff.maxEnemies - this.enemies.length;
+    const count = Math.min(room, randi(1, 2 + Math.floor(diff.stage*1.6)));
 
-      this.player=new Player(name,avi);
-      this.friend=null;
+    for(let i=0;i<count;i++){
+      const x=this.world.cam.x + RW + randi(20,80);
+      const baseY=this.world.groundY-40;
 
-      Input.confusionEnabled=!!settings.allowConfusion;
-      Input.confusionT=0;
-
-      AudioSys.setHard(!!settings.hardAudio);
-
-      // mission
-      const missionName =
-        missionId==="SURVIVE_120" ? "Survive 2:00" :
-        missionId==="SAVE_CHILD" ? "Save Patient 07" :
-        "Reach the Chapel";
-      this.mission=new Mission(missionId, missionName);
-      this.mission.start(this);
-
-      // spawn child depending mission
-      this.child=null;
-      if(missionId==="SAVE_CHILD"){
-        // spawn her early, but slightly ahead
-        this.child = new Patient07(this.world.cam.x + RW + 120);
-        this.whisper("SHE IS SOMEWHERE IN THE WARD.", 2.0);
+      let type="ANGEL";
+      const elite = chance(diff.eliteChance);
+      if(elite){
+        // weighted variety
+        const r=Math.random();
+        if(r<0.35) type="FIEND";
+        else if(r<0.60) type="CRAZY";
+        else if(r<0.82) type="WAILER";
+        else type="GOLEM";
       } else {
-        // she may appear later as anxiety
-        this.child=null;
+        // common: angels + crazies
+        type = chance(0.65) ? "ANGEL" : "CRAZY";
       }
 
-      // start in “vibrant ward” quicker
-      this.world.thresholdX = 700;
-
-      this.flags.metDilemma=false;
-
-      this.whisper(`WELCOME, ${name}. THE WARD KNOWS YOU.`, 2.2);
+      const y = (type==="ANGEL"||type==="WAILER") ? (this.world.groundY - randi(70,130)) : (baseY);
+      this.enemies.push(new Enemy(x,y,type));
     }
 
-    spawnPickup(x,y,kind){
-      this.pickups.push(new Pickup(x,y,kind));
+    // occasional helpful drops to keep winnable
+    if(chance(0.10)) this.spawnPickup(this.world.cam.x+RW-randi(30,70), this.world.groundY-16, chance(0.5)?"HP":"SAN");
+  }
+
+  findNearestEnemy(x,y,rad){
+    let best=null, bd=rad;
+    for(const e of this.enemies){
+      const d=Math.hypot(e.cx-x, e.cy-y);
+      if(d<bd){ bd=d; best=e; }
     }
-
-    spawnWave(){
-      const diff=this.difficulty();
-      if(this.enemies.length>=diff.maxEnemies) return;
-
-      const room = diff.maxEnemies - this.enemies.length;
-      const count = Math.min(room, randi(1, 2 + Math.floor(diff.stage*1.6)));
-
-      for(let i=0;i<count;i++){
-        const x=this.world.cam.x + RW + randi(20,80);
-        const baseY=this.world.groundY-40;
-
-        let type="ANGEL";
-        const elite = chance(diff.eliteChance);
-        if(elite){
-          // weighted variety
-          const r=Math.random();
-          if(r<0.35) type="FIEND";
-          else if(r<0.60) type="CRAZY";
-          else if(r<0.82) type="WAILER";
-          else type="GOLEM";
-        } else {
-          // common: angels + crazies
-          type = chance(0.65) ? "ANGEL" : "CRAZY";
-        }
-
-        const y = (type==="ANGEL"||type==="WAILER") ? (this.world.groundY - randi(70,130)) : (baseY);
-        this.enemies.push(new Enemy(x,y,type));
-      }
-
-      // occasional helpful drops to keep winnable
-      if(chance(0.10)) this.spawnPickup(this.world.cam.x+RW-randi(30,70), this.world.groundY-16, chance(0.5)?"HP":"SAN");
+    if(this.boss && !this.boss.dead){
+      const d=Math.hypot(this.boss.cx-x, this.boss.cy-y);
+      if(d<bd){ bd=d; best=this.boss; }
     }
+    return best;
+  }
 
-    findNearestEnemy(x,y,rad){
-      let best=null, bd=rad;
+  fireWeapon(player, ax, ay){
+    const wpn=player.weapon;
+
+    if(wpn.type==="melee"){
+      const range=34;
+      const px=player.cx+player.facing*12;
+      const py=player.cy;
       for(const e of this.enemies){
-        const d=Math.hypot(e.cx-x, e.cy-y);
-        if(d<bd){ bd=d; best=e; }
+        if(!e.dead && Math.hypot(e.cx-px,e.cy-py)<range) e.hit(wpn.dmg,this);
       }
-      if(this.boss && !this.boss.dead){
-        const d=Math.hypot(this.boss.cx-x, this.boss.cy-y);
-        if(d<bd){ bd=d; best=this.boss; }
-      }
-      return best;
+      if(this.boss && !this.boss.dead && Math.hypot(this.boss.cx-px,this.boss.cy-py)<range+18) this.boss.hit(wpn.dmg,this);
+      this.fxSpawn(px,py,"spark",12);
+      AudioSys.ping("thump",0.6);
+      player.san=clamp(player.san-0.2,0,player.sanMax);
+      return;
     }
 
-    fireWeapon(player, ax, ay){
-      const wpn=player.weapon;
+    // gun
+    const ox=player.x+(player.facing>0?player.w:0);
+    const oy=player.y+14;
+    const baseAng=Math.atan2(ay-oy, ax-ox);
+    const sp=620;
 
-      if(wpn.type==="melee"){
-        const range=34;
-        const px=player.cx+player.facing*12;
-        const py=player.cy;
-        for(const e of this.enemies){
-          if(!e.dead && Math.hypot(e.cx-px,e.cy-py)<range) e.hit(wpn.dmg,this);
+    const bullets=wpn.bullets||1;
+    const spread=wpn.spread||0;
+    for(let i=0;i<bullets;i++){
+      const ang=baseAng+rand(-spread,spread);
+      const vx=Math.cos(ang)*sp;
+      const vy=Math.sin(ang)*sp;
+      this.bullets.push(new Bullet(ox,oy,vx,vy,wpn.dmg, wpn.pierce||0, "player"));
+    }
+
+    player.san=clamp(player.san-(wpn.sanityCost||0.35),0,player.sanMax);
+    AudioSys.ping("shoot",0.7);
+  }
+
+  fireLaser(player, ax, ay, dt){
+    const ox=player.x+(player.facing>0?player.w:0);
+    const oy=player.y+14;
+    const ang=Math.atan2(ay-oy, ax-ox);
+    const dx=Math.cos(ang), dy=Math.sin(ang);
+
+    const maxLen=320;
+    let hitLen=maxLen;
+
+    const step=6;
+    for(let t=0;t<maxLen;t+=step){
+      const px=ox+dx*t, py=oy+dy*t;
+      if(py>this.world.groundY){ hitLen=t; break; }
+      let blocked=false;
+      for(const o of this.world.obstacles){
+        if(aabb(px,py,2,2,o.x,o.y,o.w,o.h)){ blocked=true; break; }
+      }
+      if(blocked){ hitLen=t; break; }
+    }
+
+    const dmgPerSec = player.weapon.dmg;
+    const dmg = dmgPerSec * dt;
+
+    const beamRadius=7;
+    for(const e of this.enemies){
+      if(e.dead) continue;
+      const ex=e.cx, ey=e.cy;
+      const vx=ex-ox, vy=ey-oy;
+      const proj=vx*dx+vy*dy;
+      if(proj<0||proj>hitLen) continue;
+      const px=ox+dx*proj, py=oy+dy*proj;
+      const dist=Math.hypot(ex-px, ey-py);
+      if(dist<beamRadius){
+        e.hit(dmg*1.25, this);
+      }
+    }
+    if(this.boss && !this.boss.dead){
+      const ex=this.boss.cx, ey=this.boss.cy;
+      const vx=ex-ox, vy=ey-oy;
+      const proj=vx*dx+vy*dy;
+      if(proj>0 && proj<hitLen){
+        const px=ox+dx*proj, py=oy+dy*proj;
+        const dist=Math.hypot(ex-px, ey-py);
+        if(dist<beamRadius+10){
+          this.boss.hit(dmg*1.05, this);
         }
-        if(this.boss && !this.boss.dead && Math.hypot(this.boss.cx-px,this.boss.cy-py)<range+18) this.boss.hit(wpn.dmg,this);
-        this.fxSpawn(px,py,"spark",12);
-        AudioSys.ping("thump",0.6);
-        player.san=clamp(player.san-0.2,0,player.sanMax);
+      }
+    }
+
+    const cost = (player.weapon.sanityCostPerSec||8.5)*dt;
+    player.san=clamp(player.san-cost,0,player.sanMax);
+
+    this._laser = {x0:ox,y0:oy,x1:ox+dx*hitLen,y1:oy+dy*hitLen, t:0.05};
+    if(chance(0.2)) AudioSys.ping("laser",0.35);
+    this.fxSpawn(ox+dx*(hitLen*0.7), oy+dy*(hitLen*0.7), "spark", 2);
+    this.fxSpawn(ox+dx*(hitLen*0.9), oy+dy*(hitLen*0.9), "spark", 2);
+  }
+
+  spawnBossBurst(x0,y0,x1,y1,count,spread,speed,dmg){
+    const base=Math.atan2(y1-y0,x1-x0);
+    for(let i=0;i<count;i++){
+      const ang=base+rand(-spread,spread);
+      const vx=Math.cos(ang)*speed;
+      const vy=Math.sin(ang)*speed;
+      const b=new Bullet(x0,y0,vx,vy,dmg,0,"boss");
+      b.w=5; b.h=5;
+      this.bossBullets.push(b);
+    }
+  }
+
+  startBoss(index){
+    this.bullets.length=0;
+    this.bossBullets.length=0;
+    this.boss = index===0 ? new BossClinician(this.world.cam.x+RW+90,this) : new BossChoir(this.world.cam.x+RW+90,this);
+    this.whisper(`${this.boss.name} ARRIVES.`,2.2);
+    AudioSys.ping("hit",1.0);
+  }
+
+  moralDilemma(){
+    if(this.flags.metDilemma) return;
+    this.flags.metDilemma=true;
+
+    const p=this.player;
+    const name=p.name;
+    const tone = (p.avi===1) ? "ritual" : (p.avi===2 ? "brutal" : "flat");
+
+    const body =
+      tone==="ritual"
+        ? `${name}, the nurse offers a vial. She says it’s “memory.”\nHer hands shake like a metronome.\n\nDo you take it?`
+        : tone==="brutal"
+        ? `${name}, a patient blocks the hall with a bin.\nHe begs you to “make it quiet.”\n\nDo you help or push past?`
+        : `${name}, a nurse stands still.\nShe offers a potion and refuses to blink.\n\nDo you drink it?`;
+
+    SceneStack.push(new DialogueScene({
+      title:"WARD ENCOUNTER",
+      sub:"Moral pressure (it changes what happens later).",
+      body,
+      choices:[
+        {label:"Take it.", hint:"Gain Memory Tincture; +Grief risk later", onPick:()=>{
+          this.spawnPickup(p.x+40,p.y,"MEMORY");
+          p.status.griefT = Math.max(p.status.griefT, 0.8);
+          this.whisper("YOU ACCEPTED SOMETHING THAT ACCEPTS YOU BACK.",2.0);
+        }},
+        {label:"Refuse.", hint:"Small sanity gain; ward becomes angrier", onPick:()=>{
+          p.soothe(10);
+          this.whisper("YOU SAID NO. THE WARD TAKES IT AS A GAME.",2.0);
+          this.tension.spawnT = Math.min(this.tension.spawnT, 0.4);
+        }},
+        {label:"Steal the friend-contract.", hint:"Chance to unlock FRIEND", onPick:()=>{
+          if(chance(0.55)){
+            p.applySubstance("FRIEND", this);
+          } else {
+            p.status.slowT = Math.max(p.status.slowT, 1.2);
+            this.whisper("IT SLIPS AWAY. YOUR LEGS FORGET TO OBEY.",2.0);
+          }
+        }},
+      ]
+    }));
+  }
+
+  update(dt){
+    if(this.state!=="play") return;
+
+    this.time += dt;
+    if(this.lastWhisper.t>0) this.lastWhisper.t-=dt;
+    Input.confusionT = Math.max(0, Input.confusionT-dt);
+
+    const targetX=this.player.x - RW*0.33;
+    this.world.cam.x = lerp(this.world.cam.x, targetX, 1-Math.pow(0.00025,dt));
+    this.world.cam.x = Math.max(0,this.world.cam.x);
+
+    this.atmo.update(dt,this);
+    this.tension.update(dt,this);
+    AudioSys.setIntensity(this.tension.heat, this.tension.mode);
+
+    this.mission?.update(dt,this);
+
+    if(this.atmo.name==="WARD" && !this.flags.metDilemma && Math.floor(this.player.x/10)>210){
+      if(chance(0.012)) this.moralDilemma();
+    }
+
+    for(const pr of this.world.props) pr.update(dt,this);
+
+    this.player.update(dt,this);
+
+    if(this.player.hasFriend){
+      if(!this.friend) this.friend=new Companion(this.player);
+      this.friend.update(dt,this);
+    } else {
+      this.friend=null;
+    }
+
+    if(!this.child && (!this.mission || this.mission.id!=="SAVE_CHILD")){
+      if(this.tension.mode==="frenetic" && Math.floor(this.player.x/10)>180 && chance(0.004)){
+        this.child=new Patient07(this.world.cam.x+RW-randi(60,120));
+        this.whisper("PATIENT 07 ENTERS THE HALL.", 2.0);
+        AudioSys.ping("thump",0.9);
+      }
+    }
+    if(this.child) this.child.update(dt,this);
+
+    if(this.tension.mode==="frenetic" && !this.boss){
+      if(this.mission && this.mission.id==="SURVIVE_120" && chance(0.01)){
+        if(this.enemies.length < this.difficulty().maxEnemies) this.spawnWave();
+      }
+    }
+
+    for(const e of this.enemies) e.update(dt,this);
+    this.enemies = this.enemies.filter(e=>!e.dead);
+
+    if(this.boss){
+      this.boss.update(dt,this);
+      if(this.boss.dead){
+        this.boss=null;
+        this.tension.mode="frenetic";
+        this.whisper("THE ROOM EXHALES.",2.0);
+        this.spawnPickup(this.world.cam.x+RW-60, this.world.groundY-16, "HP");
+        this.spawnPickup(this.world.cam.x+RW-40, this.world.groundY-16, "SAN");
+      }
+    }
+
+    for(const b of this.bullets) b.update(dt,this);
+    for(const b of this.bossBullets) b.update(dt,this);
+    this.bullets = this.bullets.filter(b=>!b.dead);
+    this.bossBullets = this.bossBullets.filter(b=>!b.dead);
+
+    for(const p of this.pickups) p.update(dt,this);
+    this.pickups = this.pickups.filter(p=>!p.dead);
+
+    for(const p of this.particles) p.update(dt,this);
+    this.particles = this.particles.filter(p=>p.life>0);
+
+    this._hint="";
+    if(Input.interact()){
+      if(this.child && aabb(this.child.x,this.child.y,this.child.w,this.child.h, this.player.x,this.player.y,this.player.w,this.player.h)){
+        if(!this.child.saved){
+          this.whisper("YOU FEEL HOW LIGHT SHE IS.", 1.6);
+          this.player.soothe(6);
+        }
+      }
+    }
+
+    this.resolveCombat();
+
+    const st=[];
+    if(Input.confusionEnabled && Input.confusionT>0) st.push("CONFUSION");
+    if(this.player.status.slowT>0) st.push("SLOWED");
+    if(this.player.status.griefT>0) st.push("GRIEF");
+    if(this.player.status.wiggleT>0) st.push("WIGGLE");
+    if(this.player.status.memoryT>0) st.push("MEMORY");
+    if(this.player.hasFriend) st.push(this.player.friendBoostT>0?"FRIEND:BOOST":"FRIEND");
+    this._statusText = st.join(" · ");
+
+    if(this.player.hp<=0) this.lose("PHYSICAL VESSEL DESTROYED\n\nThe ward keeps walking without you.");
+    if(this.player.san<=0) this.lose("MIND FRACTURED\n\nThe fog learns your face and wears it.");
+  }
+
+  resolveCombat(){
+    for(const b of this.bullets){
+      if(b.dead) continue;
+
+      for(const pr of this.world.props){
+        if(pr.broken) continue;
+        const box=pr.aabb();
+        if(aabb(b.x,b.y,b.w,b.h, box.x,box.y,box.w,box.h)){
+          b.dead=true;
+          const drop=pr.hit(this,"bullet");
+          if(drop==="WIGGLE") this.spawnPickup(pr.x,pr.y,"WIGGLE");
+          if(drop==="MEMORY") this.spawnPickup(pr.x,pr.y,"MEMORY");
+          this.fxSpawn(b.x,b.y,"spark",6);
+          break;
+        }
+      }
+      if(b.dead) continue;
+
+      if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
+        b.dead=true;
+        for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
+        this.addDecal(this.child.cx, this.world.groundY-1, "blood");
+        this.lose("YOU SHOT PATIENT 07.\n\nBad Ending:\nThe ward stops pretending it needs you.", true);
         return;
       }
 
-      // gun
-      const ox=player.x+(player.facing>0?player.w:0);
-      const oy=player.y+14;
-      const baseAng=Math.atan2(ay-oy, ax-ox);
-      const sp=620;
-
-      const bullets=wpn.bullets||1;
-      const spread=wpn.spread||0;
-      for(let i=0;i<bullets;i++){
-        const ang=baseAng+rand(-spread,spread);
-        const vx=Math.cos(ang)*sp;
-        const vy=Math.sin(ang)*sp;
-        this.bullets.push(new Bullet(ox,oy,vx,vy,wpn.dmg, wpn.pierce||0, "player"));
-      }
-
-      player.san=clamp(player.san-(wpn.sanityCost||0.35),0,player.sanMax);
-      AudioSys.ping("shoot",0.7);
-    }
-
-    fireLaser(player, ax, ay, dt){
-      // beam: hits first obstacle and enemies along ray (limited)
-      const ox=player.x+(player.facing>0?player.w:0);
-      const oy=player.y+14;
-      const ang=Math.atan2(ay-oy, ax-ox);
-      const dx=Math.cos(ang), dy=Math.sin(ang);
-
-      const maxLen=320;
-      let hitLen=maxLen;
-
-      // stop at obstacle
-      const step=6;
-      for(let t=0;t<maxLen;t+=step){
-        const px=ox+dx*t, py=oy+dy*t;
-        if(py>this.world.groundY){ hitLen=t; break; }
-        let blocked=false;
-        for(const o of this.world.obstacles){
-          if(aabb(px,py,2,2,o.x,o.y,o.w,o.h)){ blocked=true; break; }
-        }
-        if(blocked){ hitLen=t; break; }
-      }
-
-      // damage enemies near beam
-      const dmgPerSec = player.weapon.dmg;
-      const dmg = dmgPerSec * dt;
-
-      const beamRadius=7;
       for(const e of this.enemies){
         if(e.dead) continue;
-        // distance point-line approx by sampling along beam
-        const ex=e.cx, ey=e.cy;
-        // project onto ray
-        const vx=ex-ox, vy=ey-oy;
-        const proj=vx*dx+vy*dy;
-        if(proj<0||proj>hitLen) continue;
-        const px=ox+dx*proj, py=oy+dy*proj;
-        const dist=Math.hypot(ex-px, ey-py);
-        if(dist<beamRadius){
-          e.hit(dmg*1.25, this);
-        }
-      }
-      if(this.boss && !this.boss.dead){
-        const ex=this.boss.cx, ey=this.boss.cy;
-        const vx=ex-ox, vy=ey-oy;
-        const proj=vx*dx+vy*dy;
-        if(proj>0 && proj<hitLen){
-          const px=ox+dx*proj, py=oy+dy*proj;
-          const dist=Math.hypot(ex-px, ey-py);
-          if(dist<beamRadius+10){
-            this.boss.hit(dmg*1.05, this);
-          }
+        if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
+          if(b.hit.has(e)) continue;
+          b.hit.add(e);
+          e.hit(b.dmg,this);
+          if(b.pierce>0) b.pierce--;
+          else b.dead=true;
+          break;
         }
       }
 
-      // sanity cost per second
-      const cost = (player.weapon.sanityCostPerSec||8.5)*dt;
-      player.san=clamp(player.san-cost,0,player.sanMax);
-
-      // beam FX
-      this._laser = {x0:ox,y0:oy,x1:ox+dx*hitLen,y1:oy+dy*hitLen, t:0.05};
-      if(chance(0.2)) AudioSys.ping("laser",0.35);
-      this.fxSpawn(ox+dx*(hitLen*0.7), oy+dy*(hitLen*0.7), "spark", 2);
-      this.fxSpawn(ox+dx*(hitLen*0.9), oy+dy*(hitLen*0.9), "spark", 2);
-    }
-
-    spawnBossBurst(x0,y0,x1,y1,count,spread,speed,dmg){
-      const base=Math.atan2(y1-y0,x1-x0);
-      for(let i=0;i<count;i++){
-        const ang=base+rand(-spread,spread);
-        const vx=Math.cos(ang)*speed;
-        const vy=Math.sin(ang)*speed;
-        const b=new Bullet(x0,y0,vx,vy,dmg,0,"boss");
-        b.w=5; b.h=5;
-        this.bossBullets.push(b);
+      if(this.boss && !this.boss.dead && aabb(b.x,b.y,b.w,b.h, this.boss.x,this.boss.y,this.boss.w,this.boss.h)){
+        this.boss.hit(b.dmg,this);
+        b.dead=true;
       }
     }
 
-    startBoss(index){
-      this.bullets.length=0;
-      this.bossBullets.length=0;
-      this.boss = index===0 ? new BossClinician(this.world.cam.x+RW+90,this) : new BossChoir(this.world.cam.x+RW+90,this);
-      this.whisper(`${this.boss.name} ARRIVES.`,2.2);
-      AudioSys.ping("hit",1.0);
-    }
-
-    moralDilemma(){
-      if(this.flags.metDilemma) return;
-      this.flags.metDilemma=true;
-
-      const p=this.player;
-      const name=p.name;
-      const tone = (p.avi===1) ? "ritual" : (p.avi===2 ? "brutal" : "flat");
-
-      const body =
-        tone==="ritual"
-          ? `${name}, the nurse offers a vial. She says it’s “memory.”\nHer hands shake like a metronome.\n\nDo you take it?`
-          : tone==="brutal"
-          ? `${name}, a patient blocks the hall with a bin.\nHe begs you to “make it quiet.”\n\nDo you help or push past?`
-          : `${name}, a nurse stands still.\nShe offers a potion and refuses to blink.\n\nDo you drink it?`;
-
-      SceneStack.push(new DialogueScene({
-        title:"WARD ENCOUNTER",
-        sub:"Moral pressure (it changes what happens later).",
-        body,
-        choices:[
-          {label:"Take it.", hint:"Gain Memory Tincture; +Grief risk later", onPick:()=>{
-            this.spawnPickup(p.x+40,p.y,"MEMORY");
-            p.status.griefT = Math.max(p.status.griefT, 0.8);
-            this.whisper("YOU ACCEPTED SOMETHING THAT ACCEPTS YOU BACK.",2.0);
-          }},
-          {label:"Refuse.", hint:"Small sanity gain; ward becomes angrier", onPick:()=>{
-            p.soothe(10);
-            this.whisper("YOU SAID NO. THE WARD TAKES IT AS A GAME.",2.0);
-            // slightly more spawns for a while
-            this.tension.spawnT = Math.min(this.tension.spawnT, 0.4);
-          }},
-          {label:"Steal the friend-contract.", hint:"Chance to unlock FRIEND", onPick:()=>{
-            if(chance(0.55)){
-              p.applySubstance("FRIEND", this);
-            } else {
-              p.status.slowT = Math.max(p.status.slowT, 1.2);
-              this.whisper("IT SLIPS AWAY. YOUR LEGS FORGET TO OBEY.",2.0);
-            }
-          }},
-        ]
-      }));
-    }
-
-    update(dt){
-      if(this.state!=="play") return;
-
-      this.time += dt;
-      if(this.lastWhisper.t>0) this.lastWhisper.t-=dt;
-      Input.confusionT = Math.max(0, Input.confusionT-dt);
-
-      // camera
-      const targetX=this.player.x - RW*0.33;
-      this.world.cam.x = lerp(this.world.cam.x, targetX, 1-Math.pow(0.00025,dt));
-      this.world.cam.x = Math.max(0,this.world.cam.x);
-
-      // zone + tension + mission
-      this.atmo.update(dt,this);
-      this.tension.update(dt,this);
-      AudioSys.setIntensity(this.tension.heat, this.tension.mode);
-
-      this.mission?.update(dt,this);
-
-      // trigger dilemma once in WARD
-      if(this.atmo.name==="WARD" && !this.flags.metDilemma && Math.floor(this.player.x/10)>210){
-        if(chance(0.012)) this.moralDilemma();
+    for(const b of this.bossBullets){
+      if(b.dead) continue;
+      if(aabb(b.x,b.y,b.w,b.h, this.player.x,this.player.y,this.player.w,this.player.h)){
+        b.dead=true;
+        this.player.hurt(7, b.x);
+        for(let i=0;i<10;i++) this.fxSpawn(this.player.cx,this.player.cy,"blood",1);
+        AudioSys.ping("hit",0.9);
       }
-
-      // props update
-      for(const pr of this.world.props) pr.update(dt,this);
-
-      // player update
-      this.player.update(dt,this);
-
-      // friend companion
-      if(this.player.hasFriend){
-        if(!this.friend) this.friend=new Companion(this.player);
-        this.friend.update(dt,this);
-      } else {
-        this.friend=null;
-      }
-
-      // child spawn logic if not save mission
-      if(!this.child && (!this.mission || this.mission.id!=="SAVE_CHILD")){
-        // appears occasionally after some depth in frenetic
-        if(this.tension.mode==="frenetic" && Math.floor(this.player.x/10)>180 && chance(0.004)){
-          this.child=new Patient07(this.world.cam.x+RW-randi(60,120));
-          this.whisper("PATIENT 07 ENTERS THE HALL.", 2.0);
-          AudioSys.ping("thump",0.9);
-        }
-      }
-      if(this.child) this.child.update(dt,this);
-
-      // spawns (also if survive mission)
-      if(this.tension.mode==="frenetic" && !this.boss){
-        // spawns handled by Tension, but give extra pulse in SURVIVE mission
-        if(this.mission && this.mission.id==="SURVIVE_120" && chance(0.01)){
-          if(this.enemies.length < this.difficulty().maxEnemies) this.spawnWave();
-        }
-      }
-
-      // enemies
-      for(const e of this.enemies) e.update(dt,this);
-      this.enemies = this.enemies.filter(e=>!e.dead);
-
-      // boss
-      if(this.boss){
-        this.boss.update(dt,this);
-        if(this.boss.dead){
-          this.boss=null;
-          this.tension.mode="frenetic";
-          this.whisper("THE ROOM EXHALES.",2.0);
-          this.spawnPickup(this.world.cam.x+RW-60, this.world.groundY-16, "HP");
-          this.spawnPickup(this.world.cam.x+RW-40, this.world.groundY-16, "SAN");
-        }
-      }
-
-      // bullets
-      for(const b of this.bullets) b.update(dt,this);
-      for(const b of this.bossBullets) b.update(dt,this);
-      this.bullets = this.bullets.filter(b=>!b.dead);
-      this.bossBullets = this.bossBullets.filter(b=>!b.dead);
-
-      // pickups
-      for(const p of this.pickups) p.update(dt,this);
-      this.pickups = this.pickups.filter(p=>!p.dead);
-
-      // particles
-      for(const p of this.particles) p.update(dt,this);
-      this.particles = this.particles.filter(p=>p.life>0);
-
-      // interactions (E)
-      this._hint="";
-      if(Input.interact()){
-        // also: touching child is automatic in Patient07.update for mission, but E can “comfort” her when not saved
-        if(this.child && aabb(this.child.x,this.child.y,this.child.w,this.child.h, this.player.x,this.player.y,this.player.w,this.player.h)){
-          if(!this.child.saved){
-            this.whisper("YOU FEEL HOW LIGHT SHE IS.", 1.6);
-            this.player.soothe(6);
-          }
-        }
-      }
-
-      // resolve combat hits
-      this.resolveCombat();
-
-      // status label
-      const st=[];
-      if(Input.confusionEnabled && Input.confusionT>0) st.push("CONFUSION");
-      if(this.player.status.slowT>0) st.push("SLOWED");
-      if(this.player.status.griefT>0) st.push("GRIEF");
-      if(this.player.status.wiggleT>0) st.push("WIGGLE");
-      if(this.player.status.memoryT>0) st.push("MEMORY");
-      if(this.player.hasFriend) st.push(this.player.friendBoostT>0?"FRIEND:BOOST":"FRIEND");
-      this._statusText = st.join(" · ");
-
-      // lose
-      if(this.player.hp<=0) this.lose("PHYSICAL VESSEL DESTROYED\n\nThe ward keeps walking without you.");
-      if(this.player.san<=0) this.lose("MIND FRACTURED\n\nThe fog learns your face and wears it.");
-    }
-
-    resolveCombat(){
-      // bullets vs props + enemies + child + boss
-      for(const b of this.bullets){
-        if(b.dead) continue;
-
-        // props
-        for(const pr of this.world.props){
-          if(pr.broken) continue;
-          const box=pr.aabb();
-          if(aabb(b.x,b.y,b.w,b.h, box.x,box.y,box.w,box.h)){
-            b.dead=true;
-            const drop=pr.hit(this,"bullet");
-            if(drop==="WIGGLE") this.spawnPickup(pr.x,pr.y,"WIGGLE");
-            if(drop==="MEMORY") this.spawnPickup(pr.x,pr.y,"MEMORY");
-            this.fxSpawn(b.x,b.y,"spark",6);
-            break;
-          }
-        }
-        if(b.dead) continue;
-
-        // child hit => bad ending always
-        if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
-          b.dead=true;
-          for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
-          this.addDecal(this.child.cx, this.world.groundY-1, "blood");
-          this.lose("YOU SHOT PATIENT 07.\n\nBad Ending:\nThe ward stops pretending it needs you.", true);
-          return;
-        }
-
-        // enemies
-        for(const e of this.enemies){
-          if(e.dead) continue;
-          if(aabb(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
-            if(b.hit.has(e)) continue;
-            b.hit.add(e);
-            e.hit(b.dmg,this);
-            if(b.pierce>0) b.pierce--;
-            else b.dead=true;
-            break;
-          }
-        }
-
-        // boss
-        if(this.boss && !this.boss.dead && aabb(b.x,b.y,b.w,b.h, this.boss.x,this.boss.y,this.boss.w,this.boss.h)){
-          this.boss.hit(b.dmg,this);
-          b.dead=true;
-        }
-      }
-
-      // boss bullets
-      for(const b of this.bossBullets){
-        if(b.dead) continue;
-        if(aabb(b.x,b.y,b.w,b.h, this.player.x,this.player.y,this.player.w,this.player.h)){
-          b.dead=true;
-          this.player.hurt(7, b.x);
-          for(let i=0;i<10;i++) this.fxSpawn(this.player.cx,this.player.cy,"blood",1);
-          AudioSys.ping("hit",0.9);
-        }
-        if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
-          b.dead=true;
-          for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
-          this.addDecal(this.child.cx, this.world.groundY-1, "blood");
-          this.lose("THE SONG TOUCHED PATIENT 07.\n\nBad Ending:\nYou didn’t pull the trigger — the ward still blames you.", true);
-          return;
-        }
-      }
-    }
-
-    lose(text, bad=false){
-      this.state="end";
-      UI.end.classList.remove("hidden");
-      UI.endTitle.textContent = bad ? "BAD ENDING" : "SIGNAL LOST";
-      UI.endBody.textContent = text;
-      UI.hud.classList.add("hidden");
-      AudioSys.setIntensity(bad?0.95:0.55,"boss");
-      AudioSys.ping("hit",1.0);
-    }
-
-    win(text){
-      this.state="end";
-      UI.end.classList.remove("hidden");
-      UI.endTitle.textContent = "RUN COMPLETE";
-      UI.endBody.textContent = text;
-      UI.hud.classList.add("hidden");
-      AudioSys.setIntensity(0.35,"atmosphere");
-      AudioSys.ping("thump",0.9);
-    }
-
-    draw(){
-      const t=this.time;
-
-      // world first
-      this.world.draw(bctx,t,this.atmo,this.decals);
-
-      // props
-      for(const pr of this.world.props) pr.draw(bctx,this);
-
-      // pickups
-      for(const p of this.pickups) p.draw(bctx,this);
-
-      // entities
-      if(this.child) this.child.draw(bctx,this);
-      for(const e of this.enemies) e.draw(bctx,this);
-      if(this.boss) this.boss.draw(bctx,this);
-      for(const b of this.bossBullets) b.draw(bctx,this.world.cam);
-      for(const b of this.bullets) b.draw(bctx,this.world.cam);
-
-      if(this.friend) this.friend.draw(bctx,this);
-      if(this.player) this.player.draw(bctx,this);
-
-      // particles
-      for(const p of this.particles) p.draw(bctx,this.world.cam);
-
-      // laser overlay
-      if(this._laser && this._laser.t>0){
-        this._laser.t -= 1/60;
-        const cam=this.world.cam;
-        bctx.globalAlpha=0.8;
-        bctx.strokeStyle=PAL.potion;
-        bctx.beginPath();
-        bctx.moveTo((this._laser.x0-cam.x)|0,(this._laser.y0-cam.y)|0);
-        bctx.lineTo((this._laser.x1-cam.x)|0,(this._laser.y1-cam.y)|0);
-        bctx.stroke();
-        bctx.globalAlpha=1;
-      }
-
-      // lighting + overlays
-      this.drawLighting(bctx);
-      this.drawOverlayText(bctx);
-
-      // post
-      this.fx.update(1/60,this);
-      this.fx.post(bctx,this);
-
-      // upscale
-      ctx.fillStyle="#000";
-      ctx.fillRect(0,0,W,H);
-      const scale=Math.max(1,Math.floor(Math.min(W/RW,H/RH)));
-      const dw=RW*scale, dh=RH*scale;
-      const dx=((W-dw)/2)|0, dy=((H-dh)/2)|0;
-      ctx.drawImage(buf,0,0,RW,RH,dx,dy,dw,dh);
-    }
-
-    drawLighting(ctx){
-      const p=this.player;
-      if(!p) return;
-
-      const fogMult=this.atmo?this.atmo.fogMult:1.0;
-      const px=(p.x-this.world.cam.x+p.w/2)|0;
-      const py=(p.y+p.h/2)|0;
-      const rad=p.lantern;
-
-      const fog=ctx.createRadialGradient(px,py,rad*0.2,px,py,rad*1.65*fogMult);
-      fog.addColorStop(0,"rgba(0,0,0,0)");
-      fog.addColorStop(0.55,"rgba(0,0,0,0.45)");
-      fog.addColorStop(1,"rgba(0,0,0,0.98)");
-      ctx.fillStyle=fog;
-      ctx.fillRect(0,0,RW,RH);
-
-      ctx.globalCompositeOperation="screen";
-      ctx.globalAlpha=(0.12+this.tension.heat*0.15)*fogMult;
-      ctx.fillStyle="#111";
-      for(let i=0;i<10;i++){
-        const mx=((performance.now()/50+i*210)%(RW+420))-210;
-        ctx.fillRect(mx,0,90,RH);
-      }
-      ctx.globalAlpha=1;
-      ctx.globalCompositeOperation="source-over";
-    }
-
-    drawOverlayText(ctx){
-      const mx=(Input.mouse.nx*RW)|0;
-      const my=(Input.mouse.ny*RH)|0;
-      ctx.globalAlpha=0.85;
-      ctx.strokeStyle="#888";
-      ctx.beginPath();
-      ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
-      ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
-      ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
-      ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
-      ctx.stroke();
-      ctx.globalAlpha=1;
-
-      if(this.lastWhisper.t>0){
-        ctx.font="10px ui-monospace, monospace";
-        ctx.fillStyle="#9a9aaa";
-        ctx.globalAlpha=clamp(this.lastWhisper.t/2,0,1)*0.9;
-        ctx.fillText(this.lastWhisper.text, 8, RH-10);
-        ctx.globalAlpha=1;
+      if(this.child && !this.child.saved && aabb(b.x,b.y,b.w,b.h, this.child.x,this.child.y,this.child.w,this.child.h)){
+        b.dead=true;
+        for(let i=0;i<40;i++) this.fxSpawn(this.child.cx,this.child.cy, chance(0.6)?"blood":"gib", 1);
+        this.addDecal(this.child.cx, this.world.groundY-1, "blood");
+        this.lose("THE SONG TOUCHED PATIENT 07.\n\nBad Ending:\nYou didn’t pull the trigger — the ward still blames you.", true);
+        return;
       }
     }
   }
+
+  lose(text, bad=false){
+    this.state="end";
+    UI.end.classList.remove("hidden");
+    UI.endTitle.textContent = bad ? "BAD ENDING" : "SIGNAL LOST";
+    UI.endBody.textContent = text;
+    UI.hud.classList.add("hidden");
+    AudioSys.setIntensity(bad?0.95:0.55,"boss");
+    AudioSys.ping("hit",1.0);
+  }
+
+  win(text){
+    this.state="end";
+    UI.end.classList.remove("hidden");
+    UI.endTitle.textContent = "RUN COMPLETE";
+    UI.endBody.textContent = text;
+    UI.hud.classList.add("hidden");
+    AudioSys.setIntensity(0.35,"atmosphere");
+    AudioSys.ping("thump",0.9);
+  }
+
+  draw(){
+    const t=this.time;
+
+    this.world.draw(bctx,t,this.atmo,this.decals);
+
+    for(const pr of this.world.props) pr.draw(bctx,this);
+
+    for(const p of this.pickups) p.draw(bctx,this);
+
+    if(this.child) this.child.draw(bctx,this);
+    for(const e of this.enemies) e.draw(bctx,this);
+    if(this.boss) this.boss.draw(bctx,this);
+    for(const b of this.bossBullets) b.draw(bctx,this.world.cam);
+    for(const b of this.bullets) b.draw(bctx,this.world.cam);
+
+    if(this.friend) this.friend.draw(bctx,this);
+    if(this.player) this.player.draw(bctx,this);
+
+    for(const p of this.particles) p.draw(bctx,this.world.cam);
+
+    if(this._laser && this._laser.t>0){
+      this._laser.t -= 1/60;
+      const cam=this.world.cam;
+      bctx.globalAlpha=0.8;
+      bctx.strokeStyle=PAL.potion;
+      bctx.beginPath();
+      bctx.moveTo((this._laser.x0-cam.x)|0,(this._laser.y0-cam.y)|0);
+      bctx.lineTo((this._laser.x1-cam.x)|0,(this._laser.y1-cam.y)|0);
+      bctx.stroke();
+      bctx.globalAlpha=1;
+    }
+
+    this.drawLighting(bctx);
+    this.drawOverlayText(bctx);
+
+    this.fx.update(1/60,this);
+    this.fx.post(bctx,this);
+
+    ctx.fillStyle="#000";
+    ctx.fillRect(0,0,W,H);
+    const scale=Math.max(1,Math.floor(Math.min(W/RW,H/RH)));
+    const dw=RW*scale, dh=RH*scale;
+    const dx=((W-dw)/2)|0, dy=((H-dh)/2)|0;
+    ctx.drawImage(buf,0,0,RW,RH,dx,dy,dw,dh);
+  }
+
+  drawLighting(ctx){
+    const p=this.player;
+    if(!p) return;
+
+    const fogMult=this.atmo?this.atmo.fogMult:1.0;
+    const px=(p.x-this.world.cam.x+p.w/2)|0;
+    const py=(p.y+p.h/2)|0;
+    const rad=p.lantern;
+
+    const fog=ctx.createRadialGradient(px,py,rad*0.2,px,py,rad*1.65*fogMult);
+    fog.addColorStop(0,"rgba(0,0,0,0)");
+    fog.addColorStop(0.55,"rgba(0,0,0,0.45)");
+    fog.addColorStop(1,"rgba(0,0,0,0.98)");
+    ctx.fillStyle=fog;
+    ctx.fillRect(0,0,RW,RH);
+
+    ctx.globalCompositeOperation="screen";
+    ctx.globalAlpha=(0.12+this.tension.heat*0.15)*fogMult;
+    ctx.fillStyle="#111";
+    for(let i=0;i<10;i++){
+      const mx=((performance.now()/50+i*210)%(RW+420))-210;
+      ctx.fillRect(mx,0,90,RH);
+    }
+    ctx.globalAlpha=1;
+    ctx.globalCompositeOperation="source-over";
+  }
+
+  drawOverlayText(ctx){
+    const mx=(Input.mouse.nx*RW)|0;
+    const my=(Input.mouse.ny*RH)|0;
+    ctx.globalAlpha=0.85;
+    ctx.strokeStyle="#888";
+    ctx.beginPath();
+    ctx.moveTo(mx-4,my); ctx.lineTo(mx-1,my);
+    ctx.moveTo(mx+1,my); ctx.lineTo(mx+4,my);
+    ctx.moveTo(mx,my-4); ctx.lineTo(mx,my-1);
+    ctx.moveTo(mx,my+1); ctx.lineTo(mx,my+4);
+    ctx.stroke();
+    ctx.globalAlpha=1;
+
+    if(this.lastWhisper.t>0){
+      ctx.font="10px ui-monospace, monospace";
+      ctx.fillStyle="#9a9aaa";
+      ctx.globalAlpha=clamp(this.lastWhisper.t/2,0,1)*0.9;
+      ctx.fillText(this.lastWhisper.text, 8, RH-10);
+      ctx.globalAlpha=1;
+    }
+  }
+}
+
 
   /*************************
    * Boot + UI wiring
