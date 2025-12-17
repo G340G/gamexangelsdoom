@@ -1,0 +1,16 @@
+name = "asylum-leaderboard"
+main = "worker.js"
+compatibility_date = "2025-12-17"
+
+[vars]
+# Put your GitHub Pages origin here:
+# For your repo it’s usually https://g340g.github.io
+ALLOWED_ORIGINS = "https://g340g.github.io"
+
+[[durable_objects.bindings]]
+name = "LEADERBOARD"
+class_name = "LeaderboardDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["LeaderboardDO"]
