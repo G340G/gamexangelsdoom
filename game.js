@@ -12,12 +12,6 @@
 (() => {
   "use strict";
 
-  // Compatibility shim: some index.html versions use onclick="selectAvi(...)"
-  // This prevents ReferenceError if that HTML is still deployed.
-  if(typeof window.selectAvi!=="function"){
-    window.selectAvi = function(){ /* noop: this build uses internal avatar cards */ };
-  }
-
   /********************************************************************
    * Utils
    ********************************************************************/
@@ -123,7 +117,7 @@
       .gCard:hover{opacity:1}
       .gCard.sel{border-color:#7d3cff;opacity:1;background:#130c1f}
       .gTiny{color:#7f7f98;font-size:11px;line-height:1.6}
-      .gHud{position:fixed;left:12px;right:12px;top:10px;z-index:40;display:flex;align-items:flex-start;justify-content:space-between;pointer-events:none;mix-blend-mode:normal;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(2px);padding:8px 10px;border-radius:10px}
+      .gHud{position:fixed;left:12px;right:12px;top:10px;z-index:40;display:flex;justify-content:space-between;pointer-events:none;mix-blend-mode:normal;background:rgba(0,0,0,0.25);backdrop-filter:blur(2px);padding:6px 8px;border:1px solid rgba(255,255,255,0.05);border-radius:10px}
       .gBars{display:grid;gap:6px}
       .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase}
       .gBar{width:150px;height:5px;background:#2a2a33;position:relative}
@@ -1192,21 +1186,20 @@
       if(!this.hasLaser && this.weapons[this.weaponIndex].id==="LASER") this.weaponIndex=0;
     }
     hurt(dmg, fromX, game){
-      if(this.invT>0) return;
-
-      // Defensive: prevent NaN/undefined damage cascading into instant loss
+      // Defensive: prevent NaN damage from killing runs silently
       dmg = Number(dmg);
       if(!Number.isFinite(dmg) || dmg<=0) return;
+      if(this.invT>0) return;
 
       this.hp = clamp(this.hp - dmg, 0, this.hpMax);
-      this.invT=0.50;
-      const fx = Number(fromX);
-      const kickFrom = Number.isFinite(fx) ? fx : (this.x + this.w*0.5);
-      this.vx += (this.x<kickFrom?-1:1)*75;
+      this.invT = 0.50;
+
+      const fx = Number.isFinite(fromX) ? fromX : this.x;
+      this.vx += (this.x < fx ? -1 : 1) * 75;
 
       this.san = clamp(this.san - dmg*0.24, 0, this.sanMax);
-      this._lastHitTime = game.time;
-      game.bus.emit("player_hit",{});
+      this._lastHitTime = game?.time ?? 0;
+      game?.bus?.emit("player_hit",{});
     }
     soothe(v){ this.san=clamp(this.san+v,0,this.sanMax); }
     heal(v){ this.hp=clamp(this.hp+v,0,this.hpMax); }
@@ -1312,7 +1305,13 @@
         }
       }
 
-      this.lantern = 90 + (this.san/this.sanMax)*170;
+      // sanitize vitals (prevents rare NaN causing "random" lose)
+      if(!Number.isFinite(this.hp)) this.hp = this.hpMax;
+      if(!Number.isFinite(this.san)) this.san = this.sanMax;
+      this.hp = clamp(this.hp, 0, this.hpMax);
+      this.san = clamp(this.san, 0, this.sanMax);
+
+      this.lantern = 90 + (this.san/Math.max(1,this.sanMax))*170;
     }
 
     draw(ctx,camx,pal){
@@ -3314,9 +3313,11 @@
       // score tick
       this.score.tick(dt);
 
-      // lose conditions
-      if(this.player.hp<=0) this.lose("Your body gives up.\n\nThe ward keeps walking.\nIt steps over you like a thought.", false);
-      if(this.player.san<=0) this.lose("Your mind fractures.\n\nThe fog learns your face.\nIt wears it.", false);
+      // lose conditions (robust: ignore NaN, require real depletion)
+      if(!Number.isFinite(this.player.hp)) this.player.hp = 0;
+      if(!Number.isFinite(this.player.san)) this.player.san = 0;
+      if(this.player.hp<=0.001) this.lose("Your body gives up.\n\nThe ward keeps walking.\nIt steps over you like a thought.", false);
+      if(this.player.san<=0.001) this.lose("Your mind fractures.\n\nThe fog learns your face.\nIt wears it.", false);
 
       // FX
       this.fx.update(dt);
@@ -3673,5 +3674,8 @@
     AudioSys.setMuted(false);
     UI.btnMute.textContent="AUDIO: ON";
   };
+
+  // Compatibility: if any legacy HTML uses onclick="selectAvi(...)"
+  window.selectAvi = window.selectAvi || function(){ /* no-op: UI handled internally */ };
 
 })();
