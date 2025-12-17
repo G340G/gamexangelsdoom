@@ -3025,6 +3025,15 @@
       UI.endBody.textContent = `${text}\n\n---\n${breakdown}`;
       UI.endBadges.textContent = this.badge.sessionBadgeText();
       UI.endAutopsy.textContent = this.makeAutopsy();
+      try{
+        window.Leaderboard?.onRunEnd({
+          name: this.player?.name,
+          score: this.score.score,
+          mission: this.mission?.id,
+          result: bad ? "BAD_END" : "LOSE",
+          ts: Date.now()
+        });
+      }catch(_e){}
 
       AudioSys.setIntensity(bad?0.95:0.6,"frenetic");
       AudioSys.ping("hit",1.0);
@@ -3043,6 +3052,17 @@
       UI.endBadges.textContent = this.badge.sessionBadgeText();
       UI.endAutopsy.textContent = this.makeAutopsy();
 
+      try{
+        window.Leaderboard?.onRunEnd({
+          name: this.player?.name,
+          score: this.score.score,
+          mission: this.mission?.id,
+          result: "WIN",
+          ts: Date.now()
+        });
+      }catch(_e){}
+
+       
       AudioSys.setIntensity(0.35,"atmosphere");
       AudioSys.ping("hit",0.7);
     }
