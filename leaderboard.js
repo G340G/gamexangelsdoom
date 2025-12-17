@@ -9,7 +9,7 @@
 (() => {
   // ✅ After deploying the Worker, set this:
   // Example: "https://your-name.your-subdomain.workers.dev/api"
-  const LEADERBOARD_API = ""; // <-- PUT YOUR /api URL HERE
+  const LEADERBOARD_API = "https://gamexangelsdoom.c9qk2jmq.workers.dev/api"; // <-- PUT YOUR /api URL HERE
 
   const LOCAL_KEY = "ASYLUM_LOCAL_LEADERBOARD_V1";
   const MAX_LOCAL = 80;
