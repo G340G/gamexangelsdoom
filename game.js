@@ -108,62 +108,250 @@
    ********************************************************************/
   function injectCSS() {
     const css = `
-    :root{
-      --bg:#050505;
-      --panel:#111116;
-      --text:#a0a0b0;
-      --accent:#7d3cff;
-      --danger:#ff2a2a;
-      --good:#00ffaa;
-      --warn:#ffb000;
-      --light:#e0e0e0;
-    }
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;overflow:hidden;}
-    canvas{position:fixed;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated;background:#050505;}
+  :root{
+    --bg:#050505;
+    --panel:#0d0d12;
+    --panel2:#101018;
+    --text:#a7a7b8;
+    --muted:#7f7f98;
+    --accent:#7d3cff;
+    --accent2:#b84cff;
+    --danger:#ff2a2a;
+    --good:#00ffaa;
+    --warn:#ffb000;
+    --light:#e8e8f2;
+    --stroke:rgba(255,255,255,0.10);
+    --stroke2:rgba(255,255,255,0.06);
+    --shadow:0 0 22px rgba(0,0,0,0.9);
+  }
 
-    .gOverlay{position:fixed;inset:0;display:grid;place-items:center;z-index:50;background:rgba(0,0,0,0.86)}
-    .gPanel{width:min(860px,92vw);background:var(--panel);border:1px solid rgba(255,255,255,0.12);box-shadow:0 0 22px rgba(0,0,0,0.9);padding:22px;position:relative}
-    .gPanel:before{content:"";position:absolute;top:-1px;left:14px;right:14px;height:1px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
-    .gTitle{margin:0 0 8px 0;color:var(--light);text-transform:uppercase;letter-spacing:4px;font-size:22px;text-shadow:0 0 10px rgba(125,60,255,0.55)}
-    .gTiny{color:#7f7f98;font-size:11px;line-height:1.6}
+  html,body{
+    height:100%;
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+    overflow:hidden;
+  }
 
-    .gHud{
-      position:fixed;left:12px;right:12px;top:10px;z-index:40;
-      display:flex;justify-content:space-between;gap:10px;pointer-events:none;
-      mix-blend-mode:normal;
-      background:rgba(0,0,0,0.26);
-      border:1px solid rgba(255,255,255,0.06);
-      border-radius:12px;
-      backdrop-filter: blur(2px);
-      padding:10px 12px;
-    }
-    .gBars{display:grid;gap:6px}
-    .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,0.9)}
-    .gFade{opacity:.78}
-    .gBar{width:172px;height:6px;background:#24242d;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;position:relative}
-    .gFill{height:100%;width:100%}
-    .gRight{text-align:right}
+  canvas{
+    position:fixed; inset:0;
+    width:100%; height:100%;
+    display:block;
+    image-rendering:pixelated;
+    background:#050505;
+  }
 
-    .bossBar{position:fixed;left:50%;transform:translateX(-50%);top:58px;z-index:45;pointer-events:none;width:min(520px,86vw);display:none}
-    .bossName{color:#fff;font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.9;margin-bottom:6px;text-shadow:0 1px 2px rgba(0,0,0,.9)}
-    .bossTrack{height:8px;background:#1f1f28;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden}
-    .bossFill{height:100%;width:100%;background:linear-gradient(90deg,#ff2a2a,#7d3cff)}
+  /* --- Overlay / Panels --- */
+  .gOverlay{
+    position:fixed; inset:0;
+    display:grid; place-items:center;
+    z-index:50;
+    background:radial-gradient(1200px 700px at 50% 45%, rgba(125,60,255,0.14), rgba(0,0,0,0.86) 58%, rgba(0,0,0,0.92));
+    pointer-events:auto;
+  }
 
-    .gDialog{white-space:pre-wrap;color:#d7d7e5;font-size:13px;line-height:1.55;border-left:2px solid var(--accent);padding-left:12px;margin-top:10px}
-    .gChoice{display:grid;gap:8px;margin-top:12px}
-    .gChoice button{pointer-events:auto}
+  .gPanel{
+    width:min(860px,92vw);
+    background:linear-gradient(180deg, rgba(16,16,26,0.92), rgba(10,10,16,0.92));
+    border:1px solid var(--stroke);
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    padding:22px;
+    position:relative;
+    pointer-events:auto;
+  }
 
-    .gCrt{position:fixed;inset:0;z-index:35;pointer-events:none;
-      background:
-        linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.22) 50%),
-        linear-gradient(90deg, rgba(255,0,0,0.05), rgba(0,255,0,0.02), rgba(0,0,255,0.05));
-      background-size:100% 2px, 3px 100%;
-      box-shadow:inset 0 0 90px rgba(0,0,0,.7);
-      opacity:.92;
-    }
-    .toastWrap{position:fixed;left:12px;bottom:12px;z-index:60;display:grid;gap:8px;pointer-events:none}
-    .toast{background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.10);border-radius:10px;padding:8px 10px;color:#fff;font-size:11px;letter-spacing:1px;text-transform:uppercase;opacity:0;transform:translateY(4px);transition:.18s}
-    .toast.show{opacity:1;transform:translateY(0)}
+  .gPanel:before{
+    content:"";
+    position:absolute;
+    top:-1px; left:16px; right:16px;
+    height:1px;
+    background:linear-gradient(90deg, transparent, rgba(125,60,255,0.9), transparent);
+    box-shadow:0 0 18px rgba(125,60,255,0.45);
+  }
+
+  .gTitle{
+    margin:0 0 8px 0;
+    color:var(--light);
+    text-transform:uppercase;
+    letter-spacing:4px;
+    font-size:22px;
+    text-shadow:0 0 12px rgba(125,60,255,0.45);
+  }
+
+  .gTiny{
+    color:var(--muted);
+    font-size:11px;
+    line-height:1.6;
+  }
+
+  .gRow{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:12px;
+    margin-top:12px;
+  }
+  @media (max-width: 720px){
+    .gRow{ grid-template-columns: 1fr; }
+  }
+
+  .gField{
+    background:rgba(0,0,0,0.25);
+    border:1px solid var(--stroke2);
+    border-radius:14px;
+    padding:12px;
+  }
+
+  /* --- Buttons --- */
+  .gBtn{
+    appearance:none;
+    border:1px solid rgba(125,60,255,0.35);
+    background:
+      radial-gradient(500px 70px at 50% 0%, rgba(184,76,255,0.35), rgba(125,60,255,0.08) 55%, rgba(0,0,0,0.35)),
+      linear-gradient(180deg, rgba(18,18,30,0.9), rgba(10,10,16,0.9));
+    color:var(--light);
+    border-radius:14px;
+    padding:10px 12px;
+    font:inherit;
+    letter-spacing:0.10em;
+    text-transform:uppercase;
+    cursor:pointer;
+    pointer-events:auto;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+    transition: transform .06s ease, border-color .15s ease, filter .15s ease;
+  }
+
+  .gBtn:hover{
+    border-color: rgba(184,76,255,0.65);
+    filter:brightness(1.08);
+  }
+  .gBtn:active{
+    transform: translateY(1px);
+    filter:brightness(0.98);
+  }
+
+  .gBtn:focus-visible{
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(184,76,255,0.35), 0 10px 28px rgba(0,0,0,0.55);
+  }
+
+  .gBtn.danger{
+    border-color: rgba(255,42,42,0.5);
+    background:
+      radial-gradient(500px 70px at 50% 0%, rgba(255,42,42,0.28), rgba(255,42,42,0.07) 55%, rgba(0,0,0,0.35)),
+      linear-gradient(180deg, rgba(20,10,12,0.9), rgba(10,6,8,0.9));
+  }
+
+  /* --- Avatar cards / clickable selection --- */
+  #aviRow{
+    display:grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:10px;
+    margin-top:10px;
+  }
+  @media (max-width: 720px){
+    #aviRow{ grid-template-columns: 1fr; }
+  }
+
+  .gCard{
+    border-radius:16px;
+    border:1px solid var(--stroke2);
+    background:
+      linear-gradient(180deg, rgba(18,18,28,0.85), rgba(8,8,12,0.85));
+    padding:12px 12px;
+    cursor:pointer;
+    pointer-events:auto;
+    user-select:none;
+    min-height:54px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:4px;
+    transition: transform .06s ease, border-color .15s ease, filter .15s ease;
+  }
+
+  .gCard:hover{
+    border-color: rgba(255,255,255,0.16);
+    filter:brightness(1.07);
+  }
+  .gCard:active{ transform: translateY(1px); }
+
+  .gCard.sel{
+    border-color: rgba(184,76,255,0.75);
+    box-shadow: 0 0 0 1px rgba(184,76,255,0.18), 0 0 22px rgba(125,60,255,0.25);
+  }
+
+  /* --- Inputs / selects --- */
+  input, select{
+    width:100%;
+    background:rgba(0,0,0,0.35);
+    border:1px solid rgba(255,255,255,0.10);
+    border-radius:12px;
+    color:var(--light);
+    padding:10px 10px;
+    font:inherit;
+    outline:none;
+  }
+  input:focus, select:focus{
+    border-color: rgba(184,76,255,0.55);
+    box-shadow: 0 0 0 2px rgba(184,76,255,0.18);
+  }
+  label{ display:block; margin-bottom:6px; color:var(--muted); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; }
+
+  /* --- HUD keeps pointer-events off, but overlays are clickable --- */
+  .gHud{
+    position:fixed; left:12px; right:12px; top:10px; z-index:40;
+    display:flex; justify-content:space-between; gap:10px;
+    pointer-events:none;
+    mix-blend-mode:normal;
+    background:rgba(0,0,0,0.26);
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:12px;
+    backdrop-filter: blur(2px);
+    padding:10px 12px;
+  }
+
+  .gBars{display:grid;gap:6px}
+  .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,0.9)}
+  .gFade{opacity:.78}
+  .gBar{
+    width:172px;height:6px;
+    background:#24242d;
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:10px;overflow:hidden;position:relative
+  }
+  .gFill{height:100%;width:100%;border-radius:10px}
+
+  /* --- CRT / grain --- */
+  .gCrt{
+    position:fixed; inset:0;
+    pointer-events:none;
+    z-index:45;
+    background:
+      repeating-linear-gradient(to bottom, rgba(255,255,255,0.04), rgba(255,255,255,0.04) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 4px),
+      radial-gradient(1400px 900px at 50% 50%, rgba(255,255,255,0.05), rgba(0,0,0,0.55));
+    opacity:0.55;
+    mix-blend-mode:screen;
+  }
+
+  .toast{
+    position:fixed; left:50%; bottom:20px; transform:translateX(-50%);
+    background:rgba(0,0,0,0.65);
+    border:1px solid rgba(255,255,255,0.10);
+    color:#fff;
+    border-radius:14px;
+    padding:10px 12px;
+    z-index:60;
+    font-size:11px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    opacity:0;
+    transform:translateX(-50%) translateY(4px);
+    transition:.18s;
+    pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 `;
     const style = document.createElement("style");
     style.textContent = css;
