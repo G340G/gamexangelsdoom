@@ -1,18 +1,18 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Lo-Fi Angels // Asylum Protocol</title>
-  <style>html,body{margin:0;background:#000;overflow:hidden;}</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LO-FI ANGELS: ASYLUM PROTOCOL</title>
+  <link rel="icon" href="data:,">
+  <style>
+    html,body{height:100%;margin:0;background:#050506;overflow:hidden;}
+    canvas{display:block;width:100%;height:100%;image-rendering:pixelated;}
+  </style>
 </head>
 <body>
-  <!-- Game Canvas -->
   <canvas id="game"></canvas>
-
-  <!-- Embedded industrial soundtrack (base64 audio) -->
-  <audio id="bgm" loop style="display:none" src="data:audio/wav;base64,<?xml version="1.0" encoding="UTF-8"?><root /></audio>
-
-  <!-- Game Script -->
+  <script src="leaderboard.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
