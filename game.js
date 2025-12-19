@@ -2387,7 +2387,7 @@ ctx.globalAlpha=1;
         { id:"WALL_CONFESSION",   hint:"A wall heard you.",      test:()=> this._events.wallCount >= 13 },
         { id:"HOARDER_SIN",       hint:"You stole healing.",     test:()=> this._events.hoarderCount >= 3 },
         { id:"NEGLECT",           hint:"You ignored her.",       test:()=> this._events.daughterNeglectT >= 25 },
-        { id:"BULLET_WASTE",      hint:"You fired into fog.",    test:()=> (this.countIn(this._events.shotsWin, 12) - this.countIn(this._events.hitsWin, 12)) >= 18 },
+        { id:"BULLET_WASTE",      hint:"You fired into the fog.", test:()=> (this.countIn(this._events.shotsWin, 12) - this.countIn(this._events.hitsWin, 12)) >= 18 },
         { id:"PAIN_LOOP",         hint:"Pain repeats.",          test:()=> this.countIn(this._events.hitsWin, 10) >= 8 },
         { id:"NO_LIGHT",          hint:"You lived with no light.",test:()=> this._events.noLightT >= 18 },
         { id:"BETRAYAL",          hint:"You betrayed a patient.",test:()=> this._events.patientTrustBetray >= 1 },
@@ -2495,10 +2495,11 @@ ctx.globalAlpha=1;
       if(!this.active){
         if(this.cooldown>0){ this.cooldown=Math.max(0, this.cooldown-dt); }
         if(this.cooldown<=0){
-        for(const tr of this.triggers){
-          if(tr.test()){
-            this.start(tr.id);
-            break;
+          for(const tr of this.triggers){
+            if(tr.test()){
+              this.start(tr.id);
+              break;
+            }
           }
         }
       } else {
