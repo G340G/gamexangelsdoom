@@ -1,23 +1,22 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>LO-FI ANGELS: ASYLUM PROTOCOL</title>
-  <!-- silence favicon.ico 404 -->
-  <link rel="icon" href="data:,">
+  <meta charset="UTF-8" />
+  <title>Lo-Fi Angels // Asylum Protocol</title>
+  <style>html,body{margin:0;background:#000;overflow:hidden;}</style>
 </head>
 <body>
-  <!-- Only the canvas. game.js builds the entire UI (menu, HUD, dialogs, endings). -->
+  <!-- Game Canvas -->
   <canvas id="game"></canvas>
 
-  <!-- Optional: global leaderboard client (if present in your repo) -->
-  <script src="leaderboard.js"></script>
+  <!-- Embedded industrial soundtrack (base64 audio) -->
+  <audio id="bgm" loop style="display:none" src="data:audio/wav;base64,<?xml version="1.0" encoding="UTF-8"?><root /></audio>
 
-  <!-- Main game (self-contained UI) -->
+  <!-- Game Script -->
   <script src="game.js"></script>
 </body>
 </html>
+
 
 
 
