@@ -4,11 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LO-FI ANGELS: ASYLUM PROTOCOL</title>
+  <!-- silence favicon.ico 404 -->
   <link rel="icon" href="data:,">
 </head>
 <body>
+  <!-- Only the canvas. game.js builds the entire UI (menu, HUD, dialogs, endings). -->
   <canvas id="game"></canvas>
+
+  <!-- Optional: global leaderboard client (if present in your repo) -->
   <script src="leaderboard.js"></script>
+
+  <!-- Main game (self-contained UI) -->
   <script src="game.js"></script>
 </body>
 </html>
