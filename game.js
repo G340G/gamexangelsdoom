@@ -740,7 +740,7 @@
 
       if(loopGain){
         // loop is stronger in frenetic / boss / madness
-        const moodBoost = (this.mode===\"frenetic\"?0.55:(this.mode===\"boss\"?0.75:0.35));
+        const moodBoost = (this.mode==="frenetic"?0.55:(this.mode==="boss"?0.75:0.35));
         loopGain.gain.setTargetAtTime(base*(0.02 + this.intensity*0.20)*moodBoost*hard, t, 0.06);
       }
 
