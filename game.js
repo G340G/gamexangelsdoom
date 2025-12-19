@@ -98,50 +98,63 @@
    ********************************************************************/
   function injectCSS() {
     const css = `
-      html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
-      #game{position:fixed;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block;background:#000}
-      .gOverlay{position:fixed;inset:0;display:grid;place-items:center;z-index:50;background:rgba(0,0,0,.86)}
-      .gPanel{width:min(980px,94vw);background:#0f0f14;border:1px solid #2b2b35;box-shadow:0 0 34px rgba(0,0,0,.65);padding:18px 18px 16px}
-      .gTitle{color:#e9e9f3;letter-spacing:3px;text-transform:uppercase;font-size:18px;margin:0 0 10px}
-      .gSub{color:#8a8aa2;font-size:12px;line-height:1.6;margin:0 0 12px}
-      .gRow{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-      .gRow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-      .gField{display:grid;gap:6px}
-      .gLabel{color:#8d8da8;font-size:11px;letter-spacing:1px}
-      .gInput,.gSelect{background:#000;border:1px solid #333;color:#fff;padding:10px;font:inherit;outline:none}
-      .gInput:focus,.gSelect:focus{border-color:#7d3cff;box-shadow:0 0 0 2px rgba(125,60,255,.15)}
-      .gBtn{background:#000;border:1px solid #333;color:#e9e9f3;padding:10px 14px;font:inherit;cursor:pointer;text-transform:uppercase;letter-spacing:1px}
-      .gBtn:hover{border-color:#7d3cff;box-shadow:0 0 14px rgba(125,60,255,.25)}
-      .gBtnDanger:hover{border-color:#ff2a2a;box-shadow:0 0 14px rgba(255,42,42,.25)}
-      .gCard{border:1px solid #2b2b35;background:#0a0a0f;padding:10px;cursor:pointer;opacity:.78}
-      .gCard:hover{opacity:1}
-      .gCard.sel{border-color:#7d3cff;opacity:1;background:#130c1f}
-      .gTiny{color:#7f7f98;font-size:11px;line-height:1.6}
-      .gHud{position:fixed;left:12px;right:12px;top:10px;z-index:40;display:flex;justify-content:space-between;pointer-events:none;mix-blend-mode:normal;background:rgba(0,0,0,0.25);backdrop-filter:blur(2px);padding:6px 8px;border:1px solid rgba(255,255,255,0.05);border-radius:10px}
-      .gBars{display:grid;gap:6px}
-      .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase}
-      .gBar{width:150px;height:5px;background:#2a2a33;position:relative}
-      .gFill{height:100%;width:100%}
-      .gRight{text-align:right}
-      .gFade{opacity:.75}
-      .gDialog{white-space:pre-wrap;color:#d7d7e5;font-size:13px;line-height:1.6;border-left:2px solid #7d3cff;padding-left:12px;margin-top:10px}
-      .gChoice{display:grid;gap:8px;margin-top:12px}
-      .gChoice button{pointer-events:auto}
-      .gCrt{position:fixed;inset:0;z-index:35;pointer-events:none;
-        background:
-          linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.22) 50%),
-          linear-gradient(90deg, rgba(255,0,0,0.05), rgba(0,255,0,0.02), rgba(0,0,255,0.05));
-        background-size:100% 2px, 3px 100%;
-        box-shadow:inset 0 0 90px rgba(0,0,0,.7);
-        opacity:.9;
-      }
-      .toastWrap{position:fixed;right:12px;top:56px;z-index:60;display:grid;gap:8px;pointer-events:none}
-      .toast{background:rgba(0,0,0,.75);border:1px solid #2b2b35;padding:8px 10px;color:#fff;font-size:11px;letter-spacing:1px;text-transform:uppercase;box-shadow:0 0 18px rgba(0,0,0,.5)}
-      .bossBar{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:45;pointer-events:none;display:none}
-      .bossName{color:#fff;font-size:10px;letter-spacing:2px;text-transform:uppercase;text-align:center;margin-bottom:4px;mix-blend-mode:difference}
-      .bossTrack{width:280px;height:6px;background:#2a2a33}
-      .bossFill{height:100%;width:100%;background:#ff2a2a}
-    `;
+    :root{
+      --bg:#050505;
+      --panel:#111116;
+      --text:#a0a0b0;
+      --accent:#7d3cff;
+      --danger:#ff2a2a;
+      --good:#00ffaa;
+      --warn:#ffb000;
+      --light:#e0e0e0;
+    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;overflow:hidden;}
+    canvas{position:fixed;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated;background:#050505;}
+
+    .gOverlay{position:fixed;inset:0;display:grid;place-items:center;z-index:50;background:rgba(0,0,0,0.86)}
+    .gPanel{width:min(860px,92vw);background:var(--panel);border:1px solid rgba(255,255,255,0.12);box-shadow:0 0 22px rgba(0,0,0,0.9);padding:22px;position:relative}
+    .gPanel:before{content:"";position:absolute;top:-1px;left:14px;right:14px;height:1px;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+    .gTitle{margin:0 0 8px 0;color:var(--light);text-transform:uppercase;letter-spacing:4px;font-size:22px;text-shadow:0 0 10px rgba(125,60,255,0.55)}
+    .gTiny{color:#7f7f98;font-size:11px;line-height:1.6}
+
+    .gHud{
+      position:fixed;left:12px;right:12px;top:10px;z-index:40;
+      display:flex;justify-content:space-between;gap:10px;pointer-events:none;
+      mix-blend-mode:normal;
+      background:rgba(0,0,0,0.26);
+      border:1px solid rgba(255,255,255,0.06);
+      border-radius:12px;
+      backdrop-filter: blur(2px);
+      padding:10px 12px;
+    }
+    .gBars{display:grid;gap:6px}
+    .gStat{color:#fff;font-size:10px;letter-spacing:1px;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,0.9)}
+    .gFade{opacity:.78}
+    .gBar{width:172px;height:6px;background:#24242d;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden;position:relative}
+    .gFill{height:100%;width:100%}
+    .gRight{text-align:right}
+
+    .bossBar{position:fixed;left:50%;transform:translateX(-50%);top:58px;z-index:45;pointer-events:none;width:min(520px,86vw);display:none}
+    .bossName{color:#fff;font-size:11px;letter-spacing:2px;text-transform:uppercase;opacity:.9;margin-bottom:6px;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+    .bossTrack{height:8px;background:#1f1f28;border:1px solid rgba(255,255,255,0.08);border-radius:10px;overflow:hidden}
+    .bossFill{height:100%;width:100%;background:linear-gradient(90deg,#ff2a2a,#7d3cff)}
+
+    .gDialog{white-space:pre-wrap;color:#d7d7e5;font-size:13px;line-height:1.55;border-left:2px solid var(--accent);padding-left:12px;margin-top:10px}
+    .gChoice{display:grid;gap:8px;margin-top:12px}
+    .gChoice button{pointer-events:auto}
+
+    .gCrt{position:fixed;inset:0;z-index:35;pointer-events:none;
+      background:
+        linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.22) 50%),
+        linear-gradient(90deg, rgba(255,0,0,0.05), rgba(0,255,0,0.02), rgba(0,0,255,0.05));
+      background-size:100% 2px, 3px 100%;
+      box-shadow:inset 0 0 90px rgba(0,0,0,.7);
+      opacity:.92;
+    }
+    .toastWrap{position:fixed;left:12px;bottom:12px;z-index:60;display:grid;gap:8px;pointer-events:none}
+    .toast{background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.10);border-radius:10px;padding:8px 10px;color:#fff;font-size:11px;letter-spacing:1px;text-transform:uppercase;opacity:0;transform:translateY(4px);transition:.18s}
+    .toast.show{opacity:1;transform:translateY(0)}
+`;
     const style = document.createElement("style");
     style.textContent = css;
     document.head.appendChild(style);
@@ -177,6 +190,11 @@
         <div>
           <div class="gStat">SANITY</div>
           <div class="gBar"><div id="uiSan" class="gFill" style="background:#7d3cff"></div></div>
+        </div>
+
+        <div>
+          <div class="gStat">GUILT</div>
+          <div class="gBar"><div id="uiGuilt" class="gFill" style="background:#ffb000"></div></div>
         </div>
         <div class="gStat gFade" id="uiStatus"></div>
         <div class="gStat" id="uiMadness" style="display:none"></div>
@@ -860,7 +878,34 @@
         } else {
           ctx.fillStyle="#fff"; ctx.fillRect(0,0,RW,RH);
         }
-        ctx.globalAlpha=1;
+        
+      // Madness psychedelic hallucination (playable): subtle RGB split + hue-wash + extra scanline wobble
+      if(game.madness && game.madness.active){
+        const k = 0.10 + 0.10*Math.sin(t*3.1);
+        ctx.globalCompositeOperation = "screen";
+        ctx.globalAlpha = 0.10;
+        // color wash cycling
+        const r = (Math.sin(t*1.2)+1)*0.5;
+        const g = (Math.sin(t*1.7+2.0)+1)*0.5;
+        const b = (Math.sin(t*2.1+4.0)+1)*0.5;
+        ctx.fillStyle = `rgba(${(r*255)|0},${(g*255)|0},${(b*255)|0},0.35)`;
+        ctx.fillRect(0,0,RW,RH);
+
+        // tiny channel offsets for hallucination
+        ctx.globalAlpha = 0.12;
+        ctx.drawImage(buf, 0,0,RW,RH, (2+6*k)|0, (0)|0, RW, RH);
+        ctx.drawImage(buf, 0,0,RW,RH, (-2-6*k)|0, (1)|0, RW, RH);
+
+        // extra scanline jitter
+        ctx.globalAlpha = 0.18;
+        for(let y=0;y<RH;y+=4){
+          const off = Math.sin(t*10.0 + y*0.16) * (2.2 + 2.8*k);
+          ctx.drawImage(buf, 0,y,RW,2, off, y, RW, 2);
+        }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+      }
+ctx.globalAlpha=1;
       }
     }
   }
@@ -1092,6 +1137,9 @@
           this.dead=true;
           game.spawnParticle(this.x,this.y,"spark");
           game.bus.emit("wall_hit",{x:this.x,y:this.y});
+          // cosmetic destructible environment
+          const idx = game.world.obstacles.indexOf(o);
+          if(idx>=0){ game.world.obstacles.splice(idx,1); game.bus.emit("prop_break",{kind:"furniture",x:o.x,y:o.y}); }
           return;
         }
       }
@@ -2043,9 +2091,18 @@
         const oy=this.y+18;
         const ang=Math.atan2(p.cy-oy, p.cx-ox) + rand(-0.18,0.18);
         const sp2=260 + this.phase*50;
-        game.enemyProjectiles.push({x:ox,y:oy,vx:Math.cos(ang)*sp2,vy:Math.sin(ang)*sp2,life:1.6});
+        if(this.phase>=3 && chance(0.5)){
+        // laser (no gravity)
+        const spL = 620;
+        game.enemyProjectiles.push({x:ox,y:oy,vx:Math.cos(ang)*spL,vy:Math.sin(ang)*spL,life:0.9,damage:18,noGrav:true});
+        game.fx.triggerGlitch(0.09);
+        AudioSys.ping("shoot",0.65);
+      }else{
+        // syringe shard (gravity) — may induce confusion on hit
+        game.enemyProjectiles.push({x:ox,y:oy,vx:Math.cos(ang)*sp2,vy:Math.sin(ang)*sp2,life:1.6,damage:9});
         game.fx.triggerGlitch(0.05);
         AudioSys.ping("shoot",0.45);
+      }
       }
 
       // touch damage
@@ -2274,8 +2331,10 @@
       this.g=game;
       this.active=false;
       this.t=0;
+      this.cooldown=30;
       this.approval=0;
       this.guilt=0;
+      this.cooldown=0; // seconds until madness can trigger again
 
       this.triggers=[];
       this.fired=[]; // record trigger ids that actually fired (for autopsy)
@@ -2401,6 +2460,14 @@
       if(Input.confusionT>0) Input.confusionT = Math.max(0, Input.confusionT - dt);
 
       const p=this.g.player;
+
+      // guilt continuously corrodes sanity + intensifies tone/heat
+      if(this.guilt>0 && !this.active){
+        const drain = Math.min(0.35, this.guilt/220) * dt; // small but persistent
+        p.san = Math.max(0, p.san - drain*6.0);
+      }
+      // slow natural guilt decay
+      this.guilt = Math.max(0, this.guilt - dt*0.7);
       const moved = Math.abs(p.x - this._lastPX);
       this._lastPX = p.x;
 
@@ -2426,6 +2493,8 @@
       else this._events.noLightT = Math.max(0, this._events.noLightT - dt*0.7);
 
       if(!this.active){
+        if(this.cooldown>0){ this.cooldown=Math.max(0, this.cooldown-dt); }
+        if(this.cooldown<=0){
         for(const tr of this.triggers){
           if(tr.test()){
             this.start(tr.id);
@@ -3350,14 +3419,16 @@
         pr.life-=dt;
         pr.x += pr.vx*dt;
         pr.y += pr.vy*dt;
-        pr.vy += 120*dt;
+        if(!pr.noGrav) pr.vy += 120*dt;
 
         if(pr.life<=0) pr.life=0;
 
         // madness: harmless projectiles
         if(!this.madness.active && pr.life>0){
           if(dist(pr.x,pr.y,p.cx,p.cy)<10){
-            p.hurt(9, pr.x, this);
+            const dmg = (pr.damage!=null)?pr.damage:9;
+            p.hurt(dmg, pr.x, this);
+            if(!pr.noGrav && !this.madness.active){ p.applyEffect("CONFUSION", this); }
             this.spawnParticle(p.cx,p.cy,"blood");
             pr.life=0;
           }
@@ -3577,7 +3648,11 @@
       UI.uiHp.style.width = `${clamp((p.hp/p.hpMax)*100,0,100)}%`;
       UI.uiSan.style.width = `${clamp((p.san/p.sanMax)*100,0,100)}%`;
 
+      if(UI.uiGuilt){ const gPct = clamp((this.madness.guilt/100)*100,0,100); UI.uiGuilt.style.width = `${gPct}%`; }
+
       const st=[];
+
+      if(this.madness && this.madness.guilt>0){ st.push(`GUILT:${Math.round(this.madness.guilt)}`); }
       if(Input.confusionT>0) st.push("CONFUSION");
       if(p.status.slowT>0) st.push("SLOW");
       if(p.status.griefT>0) st.push("GRIEF");
@@ -3674,8 +3749,5 @@
     AudioSys.setMuted(false);
     UI.btnMute.textContent="AUDIO: ON";
   };
-
-  // Compatibility: if any legacy HTML uses onclick="selectAvi(...)"
-  window.selectAvi = window.selectAvi || function(){ /* no-op: UI handled internally */ };
 
 })();
